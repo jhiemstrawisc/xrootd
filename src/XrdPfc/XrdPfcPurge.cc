@@ -1,5 +1,6 @@
 #include "XrdPfc.hh"
 #include "XrdPfcTrace.hh"
+#include "XrdPfcLot.hh"
 
 #include <fcntl.h>
 #include <sys/time.h>
@@ -157,15 +158,28 @@ public:
       return ret;
    }
 
-   void dump_recursively(const char *name)
+
+   void dump_recursively(const char *name, LotUpdate *update)
    {
+      
       printf("%*d %s usage=%lld usage_extra=%lld usage_total=%lld num_ios=%d duration=%d b_hit=%lld b_miss=%lld b_byps=%lld b_wrtn=%lld\n",
              2 + 2*m_depth, m_depth, name, m_usage, m_usage_extra, m_usage + m_usage_extra,
              m_stats.m_NumIos, m_stats.m_Duration, m_stats.m_BytesHit, m_stats.m_BytesMissed, m_stats.m_BytesBypassed, m_stats.m_BytesWritten);
 
+      // Create the update JSON for this dir level
+      update->create_update_JSON(name, m_usage);
+
       for (DsMap_i i = m_subdirs.begin(); i != m_subdirs.end(); ++i)
       {
-         i->second.dump_recursively(i->first.c_str());
+         // If in this loop, there are subdirs whose usage needs to be subracted from current dir usage
+         update->m_update_JSON["includes_subdirs"] = true;
+         // Create a subdir update with incremented depth
+         LotUpdate subDirUpdate(++m_depth);
+
+         i->second.dump_recursively(i->first.c_str(), &subDirUpdate);
+
+         //Add the subdir's update json to the current dir's "subdirs" array.
+         update->add_subdir(subDirUpdate.m_update_JSON);
       }
    }
 };
@@ -210,7 +224,9 @@ public:
 
       m_prev_time = now;
 
-      m_root.dump_recursively("root");
+      // Create new LotUpdate obj and pass to dump_recursively to pull in usage stats
+      LotUpdate update;
+      m_root.dump_recursively("root", &update);
    }
 };
 
