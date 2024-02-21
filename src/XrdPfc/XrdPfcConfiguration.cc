@@ -2,7 +2,8 @@
 #include "XrdPfcTrace.hh"
 #include "XrdPfcInfo.hh"
 
-#include "XrdPfcDirPurgeFileCfg.hh"
+//#include "XrdPfcDirPurgeFileCfg.hh"
+#include "XrdPfcDirPurge.hh"
 
 #include "XrdOss/XrdOss.hh"
 
@@ -261,7 +262,6 @@ bool Cache::xplib(XrdOucStream &Config)
    else
       params[0] = 0;
 
-/*
    XrdOucPinLoader* myLib = new XrdOucPinLoader(&m_log, 0, "purgelib",
                                                 libp.c_str());
 
@@ -276,9 +276,7 @@ bool Cache::xplib(XrdOucStream &Config)
       return false;
    }
    m_dirpurge = dp;
-   */
 
-   m_dirpurge = new XrdPfcDirPurgeFileCfg();
    if (params[0])
       m_dirpurge->ConfigDirPurge(params);
 
