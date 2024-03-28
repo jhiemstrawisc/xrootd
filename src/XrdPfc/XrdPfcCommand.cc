@@ -267,7 +267,7 @@ void Cache::ExecuteCommandUrl(const std::string& command_url)
             m_writeQ.writes_between_purges += file_size;
          }
          {
-            int token = m_res_mon->register_file_open(file_path, time_now);
+            int token = m_res_mon->register_file_open(file_path, time_now, false);
             XrdPfc::Stats stats;
             stats.m_BytesWritten = file_size;
             m_res_mon->register_file_close(token, stats, time(0));

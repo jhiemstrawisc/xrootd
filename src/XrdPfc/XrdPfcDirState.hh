@@ -83,7 +83,8 @@ public:
 
    DirState* create_child(const std::string &dir);
 
-   DirState* find_path_tok(PathTokenizer &pt, int pos, bool create_subdirs);
+   DirState* find_path_tok(PathTokenizer &pt, int pos, bool create_subdirs,
+                           DirState **last_existing_dir = nullptr);
 
 public:
 
@@ -97,7 +98,8 @@ public:
 
    void      add_up_stats(const Stats& stats);
 
-   DirState* find_path(const std::string &path, int max_depth, bool parse_as_lfn, bool create_subdirs);
+   DirState* find_path(const std::string &path, int max_depth, bool parse_as_lfn, bool create_subdirs,
+                       DirState **last_existing_dir = nullptr);
 
    DirState* find_dir(const std::string &dir, bool create_subdirs);
 
@@ -128,9 +130,9 @@ public:
 
    DirState* get_root()            { return & m_root; }
 
-   DirState* find_dirstate_for_lfn(const std::string& lfn)
+   DirState* find_dirstate_for_lfn(const std::string& lfn, DirState **last_existing_dir = nullptr)
    {
-      return m_root.find_path(lfn, -1, true, true);
+      return m_root.find_path(lfn, -1, true, true, last_existing_dir);
    }
 
    void reset_stats()                   { m_root.reset_stats();                   }

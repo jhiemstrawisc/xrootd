@@ -70,8 +70,8 @@ class ResourceMonitor
    std::vector<int>         m_access_tokens_free_slots;
 
    struct OpenRecord {
-      // new file? complete?
       time_t m_open_time;
+      bool   m_existing_file;
    };
 
    struct CloseRecord {
@@ -110,7 +110,7 @@ public:
 
    // --- Event registration
 
-   int register_file_open(const std::string& filename, time_t open_timestamp) {
+   int register_file_open(const std::string& filename, time_t open_timestamp, bool existing_file) {
       // Simply return a token, we will resolve it in the actual processing of the queue.
       XrdSysMutexHelper _lock(&m_queue_mutex);
       int token;
@@ -123,7 +123,7 @@ public:
          m_access_tokens.push_back({filename});
       }
 
-      m_file_open_q.push(token, {open_timestamp});
+      m_file_open_q.push(token, {open_timestamp, existing_file});
       return token;
    }
 

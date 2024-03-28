@@ -46,19 +46,21 @@ DirState* DirState::create_child(const std::string &dir)
 //! Internal function called from find_path
 //! @param dir subdir name
 //----------------------------------------------------------------------------
-DirState* DirState::find_path_tok(PathTokenizer &pt, int pos, bool create_subdirs)
+DirState* DirState::find_path_tok(PathTokenizer &pt, int pos, bool create_subdirs,
+                                  DirState **last_existing_dir)
 {
     if (pos == pt.get_n_dirs()) return this;
 
     DsMap_i i = m_subdirs.find(pt.m_dirs[pos]);
 
-    DirState *ds = 0;
+    DirState *ds = nullptr;
 
     if (i != m_subdirs.end())
     {
         ds = & i->second;
+        if (last_existing_dir) *last_existing_dir = ds;
     }
-    if (create_subdirs)
+    else if (create_subdirs)
     {
         ds = create_child(pt.m_dirs[pos]);
     }
@@ -74,11 +76,11 @@ DirState* DirState::find_path_tok(PathTokenizer &pt, int pos, bool create_subdir
 //! @param parse_as_lfn
 //! @param create_subdirs 
 DirState* DirState::find_path(const std::string &path, int max_depth, bool parse_as_lfn,
-                              bool create_subdirs)
+                              bool create_subdirs, DirState **last_existing_dir)
 {
     PathTokenizer pt(path, max_depth, parse_as_lfn);
 
-    return find_path_tok(pt, 0, create_subdirs);
+    return find_path_tok(pt, 0, create_subdirs, last_existing_dir);
 }
 
 //----------------------------------------------------------------------------

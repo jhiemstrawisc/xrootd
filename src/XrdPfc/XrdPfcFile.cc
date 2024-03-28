@@ -488,7 +488,7 @@ bool File::Open()
    m_block_size = m_cfi.GetBufferSize();
    m_num_blocks = m_cfi.GetNBlocks();
    m_prefetch_state = (m_cfi.IsComplete()) ? kComplete : kStopped; // Will engage in AddIO().
-   m_resmon_token = Cache::ResMon().register_file_open(m_filename, time(0));
+   m_resmon_token = Cache::ResMon().register_file_open(m_filename, time(0), data_existed);
    // XXXX have some reporting counter that will trigger inter open stat reporting???
    // Or keep pull mode? Hmmh, requires Cache::active_cond lock ... and can desync with close.
    m_state_cond.UnLock();
