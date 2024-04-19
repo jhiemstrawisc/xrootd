@@ -64,9 +64,9 @@ DirState* DirState::find_path_tok(PathTokenizer &pt, int pos, bool create_subdir
     {
         ds = create_child(pt.m_dirs[pos]);
     }
-    if (ds) return ds->find_path_tok(pt, pos + 1, create_subdirs);
+    if (ds) return ds->find_path_tok(pt, pos + 1, create_subdirs, last_existing_dir);
 
-    return 0;
+    return nullptr;
 }
 
 //----------------------------------------------------------------------------
@@ -79,6 +79,8 @@ DirState* DirState::find_path(const std::string &path, int max_depth, bool parse
                               bool create_subdirs, DirState **last_existing_dir)
 {
     PathTokenizer pt(path, max_depth, parse_as_lfn);
+
+    if (last_existing_dir) *last_existing_dir = this;
 
     return find_path_tok(pt, 0, create_subdirs, last_existing_dir);
 }
@@ -97,12 +99,12 @@ DirState* DirState::find_dir(const std::string &dir,
 
     if (create_subdirs)  return create_child(dir);
 
-    return 0;
+    return nullptr;
 }
 
 //----------------------------------------------------------------------------
 //! Reset current transaction statistics.
-//! Called from Cache::copy_out_active_stats_and_update_data_fs_state()
+//! Called from ... to be seen if needed at all XXXX
 //----------------------------------------------------------------------------
 void DirState::reset_stats()
 {
@@ -117,7 +119,7 @@ void DirState::reset_stats()
 
 //----------------------------------------------------------------------------
 //! Propagate stat to parents
-//! Called from Cache::copy_out_active_stats_and_update_data_fs_state()
+//! Called from ResourceMonitor::heart_beat()
 //----------------------------------------------------------------------------
 void DirState::upward_propagate_stats()
 {
@@ -125,14 +127,15 @@ void DirState::upward_propagate_stats()
     {
         i->second.upward_propagate_stats();
 
-        // XXXXX m_stats.AddUp(i->second.m_stats);
-        // fix these for here_stats, there_stats
+        m_recursive_subdirs_stats.AddUp(i->second.m_recursive_subdirs_stats);
+        m_recursive_subdirs_stats.AddUp(i->second.m_here_stats);
+        // nothing to do for m_here_stats.
     }
 }
 
 //----------------------------------------------------------------------------
 //! Update statistics.
-//! Called from Purge thread.
+//! Called from ... to be seen XXXX
 //----------------------------------------------------------------------------
 long long DirState::upward_propagate_usage_purged()
 {
@@ -174,16 +177,6 @@ void DirState::dump_recursively(const char *name, int max_depth)
     {
         i->second.dump_recursively(i->first.c_str(), max_depth);
     }
-}
-
-//----------------------------------------------------------------------------
-//! Add to temporary Stat obj
-//!
-//----------------------------------------------------------------------------
-void DirState::add_up_stats(const Stats& stats)
-{
-   m_here_stats.AddUp(stats);
-   // XXXX propagate to parent done at the end.
 }
 
 } // end namespace

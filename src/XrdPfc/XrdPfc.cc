@@ -503,22 +503,8 @@ void Cache::ReleaseFile(File* f, IO* io)
    dec_ref_cnt(f, true);
 }
 
-int Cache::CopyOutActiveStats(std::vector<std::pair<int, Stats>> &store)
-{
-   XrdSysCondVarHelper lock(&m_active_cond);
-   int n = 0;
-   for (ActiveMap_i i = m_active.begin(); i != m_active.end(); ++i)
-   {
-      File *f = i->second;
-      if (f != 0) {
-         store.emplace_back(std::make_pair(f->GetResMonToken(), f->DeltaStatsFromLastCall()));
-         ++n;
-      }
-   }
-   return n;
-}
 
-
+//==============================================================================
 //==============================================================================
 
 namespace

@@ -83,6 +83,11 @@ public:
 
    //----------------------------------------------------------------------
 
+   long long BytesRead() const
+   {
+      return m_BytesHit + m_BytesMissed + m_BytesBypassed;
+   }
+
    void DeltaToReference(const Stats& ref)
    {
       m_NumIos        = ref.m_NumIos        - m_NumIos;

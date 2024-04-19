@@ -36,8 +36,6 @@ bool FsTraversal::begin_traversal(DirState *root, const char *root_path)
 
    bool ret = begin_traversal(root_path);
 
-   m_maintain_dirstate = false;
-
    return ret;
 }
 
@@ -79,6 +77,7 @@ void FsTraversal::end_traversal()
 
    m_rel_dir_level  = -1;
    m_root_dir_state = m_dir_state = nullptr;
+   m_maintain_dirstate = false;
 }
 
 //----------------------------------------------------------------------------

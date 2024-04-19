@@ -84,7 +84,7 @@ File::~File()
       TRACEF(Debug, "~File() close info ");
       m_info_file->Close();
       delete m_info_file;
-      m_info_file = NULL;
+      m_info_file = nullptr;
    }
 
    if (m_data_file)
@@ -92,11 +92,13 @@ File::~File()
       TRACEF(Debug, "~File() close output  ");
       m_data_file->Close();
       delete m_data_file;
-      m_data_file = NULL;
+      m_data_file = nullptr;
    }
 
-   if (m_resmon_token >= 0) {
-      Cache::ResMon().register_file_close(m_resmon_token, DeltaStatsFromLastCall(), time(0));
+   if (m_resmon_token >= 0)
+   {
+      // Last update of file stats has been sent from the final Sync.
+      Cache::ResMon().register_file_close(m_resmon_token, time(0));
    }
 
    TRACEF(Debug, "~File() ended, prefetch score = " <<  m_prefetch_score);
@@ -146,18 +148,20 @@ void File::initiate_emergency_shutdown()
 
 //------------------------------------------------------------------------------
 
-Stats File::DeltaStatsFromLastCall()
+void File::check_delta_stats()
 {
-   // Used for ResourceMonitor thread.
+   // Called under m_state_cond lock.
+   // BytesWritten indirectly trigger an unconditional merge through periodic Sync().
+   if (m_delta_stats.BytesRead() >= m_resmon_report_threshold)
+      report_and_merge_delta_stats();
+}
 
-   Stats delta;
-   {
-      XrdSysCondVarHelper _lck(m_state_cond);
-      delta = m_last_stats;
-      m_last_stats = m_stats;
-   }
-   delta.DeltaToReference(m_last_stats);
-   return delta;
+void File::report_and_merge_delta_stats()
+{
+   // Called under m_state_cond lock.
+   Cache::ResMon().register_file_update_stats(m_resmon_token, m_delta_stats);
+   m_stats.AddUp(m_delta_stats);
+   m_delta_stats.Reset();
 }
 
 //------------------------------------------------------------------------------
@@ -286,6 +290,7 @@ bool File::FinalizeSyncBeforeExit()
    {
      if ( ! m_writes_during_sync.empty() || m_non_flushed_cnt > 0 || ! m_detach_time_logged)
      {
+       report_and_merge_delta_stats();
        m_cfi.WriteIOStatDetach(m_stats);
        m_detach_time_logged = true;
        m_in_sync            = true;
@@ -316,7 +321,7 @@ void File::AddIO(IO *io)
    {
       m_io_set.insert(io);
       io->m_attach_time = now;
-      m_stats.IoAttach();
+      m_delta_stats.IoAttach();
 
       insert_remote_location(loc);
 
@@ -355,7 +360,7 @@ void File::RemoveIO(IO *io)
          ++m_current_io;
       }
 
-      m_stats.IoDetach(now - io->m_attach_time);
+      m_delta_stats.IoDetach(now - io->m_attach_time);
       m_io_set.erase(mi);
       --m_ios_in_detach;
 
@@ -488,9 +493,12 @@ bool File::Open()
    m_block_size = m_cfi.GetBufferSize();
    m_num_blocks = m_cfi.GetNBlocks();
    m_prefetch_state = (m_cfi.IsComplete()) ? kComplete : kStopped; // Will engage in AddIO().
+
    m_resmon_token = Cache::ResMon().register_file_open(m_filename, time(0), data_existed);
-   // XXXX have some reporting counter that will trigger inter open stat reporting???
-   // Or keep pull mode? Hmmh, requires Cache::active_cond lock ... and can desync with close.
+   m_resmon_report_threshold = std::min(std::max(200ll * 1024, m_file_size / 50), 500ll * 1024 * 1024);
+   // m_resmon_report_threshold_scaler; // something like 10% of original threshold, to adjust
+   // actual threshold based on return values from register_file_update_stats().
+
    m_state_cond.UnLock();
 
    return true;
@@ -672,7 +680,8 @@ int File::Read(IO *io, char* iUserBuff, long long iUserOff, int iUserSize, ReadR
       int ret = m_data_file->Read(iUserBuff, iUserOff, iUserSize);
       if (ret > 0) {
          XrdSysCondVarHelper _lck(m_state_cond);
-         m_stats.AddBytesHit(ret);
+         m_delta_stats.AddBytesHit(ret);
+         check_delta_stats();
       }
       return ret;
    }
@@ -704,7 +713,8 @@ int File::ReadV(IO *io, const XrdOucIOVec *readV, int readVnum, ReadReqRH *rh)
       int ret = m_data_file->ReadV(const_cast<XrdOucIOVec*>(readV), readVnum);
       if (ret > 0) {
          XrdSysCondVarHelper _lck(m_state_cond);
-         m_stats.AddBytesHit(ret);
+         m_delta_stats.AddBytesHit(ret);
+         check_delta_stats();
       }
       return ret;
    }
@@ -922,8 +932,8 @@ int File::ReadOpusCoalescere(IO *io, const XrdOucIOVec *readV, int readVnum,
       if (read_req->is_complete())
       {
          // Almost like FinalizeReadRequest(read_req) -- but no callout!
-         m_stats.AddReadStats(read_req->m_stats);
-
+         m_delta_stats.AddReadStats(read_req->m_stats);
+         check_delta_stats();
          m_state_cond.UnLock();
 
          int ret = read_req->return_value();
@@ -938,7 +948,8 @@ int File::ReadOpusCoalescere(IO *io, const XrdOucIOVec *readV, int readVnum,
    }
    else
    {
-      m_stats.m_BytesHit += bytes_read;
+      m_delta_stats.m_BytesHit += bytes_read;
+      check_delta_stats();
       m_state_cond.UnLock();
 
       // !!! No callout.
@@ -1046,6 +1057,7 @@ void File::Sync()
       Stats loc_stats;
       {
          XrdSysCondVarHelper _lck(&m_state_cond);
+         report_and_merge_delta_stats();
          loc_stats = m_stats;
       }
       m_cfi.WriteIOStat(loc_stats);
@@ -1263,7 +1275,8 @@ void File::FinalizeReadRequest(ReadRequest *rreq)
    // NOT under lock -- does callout
    {
       XrdSysCondVarHelper _lck(m_state_cond);
-      m_stats.AddReadStats(rreq->m_stats);
+      m_delta_stats.AddReadStats(rreq->m_stats);
+      check_delta_stats();
    }
 
    rreq->m_rh->Done(rreq->return_value());
@@ -1333,7 +1346,8 @@ void File::ProcessBlockResponse(Block *b, int res)
       {
          // Increase ref-count for the writer.
          inc_ref_count(b);
-         m_stats.AddWriteStats(b->get_size(), b->get_n_cksum_errors());
+         m_delta_stats.AddWriteStats(b->get_size(), b->get_n_cksum_errors());
+         // No check for writes, report-and-merge forced during Sync().
          cache()->AddWriteTask(b, true);
       }
 

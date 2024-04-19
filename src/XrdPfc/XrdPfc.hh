@@ -276,9 +276,6 @@ public:
    ResourceMonitor& RefResMon() { return *m_res_mon; }
    XrdXrootdGStream* GetGStream() { return m_gstream; }
 
-   int CopyOutActiveStats(std::vector<std::pair<int, Stats>> &store);
-
-
    void ExecuteCommandUrl(const std::string& command_url);
 
    static XrdScheduler *schedP;

@@ -278,9 +278,6 @@ public:
    void StopPrefetchingOnIO(IO *io);
    void RemoveIO(IO *io);
 
-   Stats DeltaStatsFromLastCall();
-   int   GetResMonToken() const { return m_resmon_token; }
-
    std::string        GetRemoteLocations()   const;
    const Info::AStat* GetLastAccessStats()   const { return m_cfi.GetLastAccessStats(); }
    size_t             GetAccessCnt()         const { return m_cfi.GetAccessCnt(); }
@@ -346,11 +343,15 @@ private:
    long long     m_block_size;
    int           m_num_blocks;
 
-   // Stats
+   // Stats and ResourceMonitor interface
 
    Stats         m_stats;              //!< cache statistics for this instance
-   Stats         m_last_stats;         //!< copy of cache stats during last purge cycle, used for per directory stat reporting
+   Stats         m_delta_stats;        //!< unreported updates to stats
    int           m_resmon_token;       //!< token used in communication with the ResourceMonitor
+   long long     m_resmon_report_threshold;
+
+   void check_delta_stats();
+   void report_and_merge_delta_stats();
 
    std::set<std::string> m_remote_locations; //!< Gathered in AddIO / ioUpdate / ioActive.
    void insert_remote_location(const std::string &loc);

@@ -110,18 +110,21 @@ int ResourceMonitor::process_queues()
    static const char *trc_pfx = "process_queues() ";
 
    // Assure that we pick up only entries that are present now.
-   // We really want all open records to be processed before file-stats so let's get
-   // the current snapshot of already opened files first.
-   // On the other hand, we do not care if we miss some updates in this pass.
-   m_file_stats_update_vec.clear();
-   int n_records = Cache::GetInstance().CopyOutActiveStats(m_file_stats_update_vec);
+   // We really want all open records to be processed before file-stats updates
+   // and all those before the close records.
+   // Purges are sort of tangential as they really just modify bytes / number
+   // of files in a direcotry and do not deal with any persistent file id tokens.
+
+   int n_records = 0;
    {
       XrdSysMutexHelper _lock(&m_queue_mutex);
       n_records += m_file_open_q.swap_queues();
+      n_records += m_file_update_stats_q.swap_queues();
       n_records += m_file_close_q.swap_queues();
       n_records += m_file_purge_q1.swap_queues();
       n_records += m_file_purge_q2.swap_queues();
       n_records += m_file_purge_q3.swap_queues();
+      ++m_queue_swap_u1;
    }
 
    for (auto &i : m_file_open_q.read_queue())
@@ -152,17 +155,17 @@ int ResourceMonitor::process_queues()
       ds->m_here_usage.m_last_open_time = i.record.m_open_time;
    }
 
-   for (auto &i : m_file_stats_update_vec)
+   for (auto &i : m_file_update_stats_q.read_queue())
    {
-      // i.first: token, i.second: Stats
-      int tid = i.first;
+      // i.id: token, i.record: Stats
+      int tid = i.id;
       AccessToken &at = token(tid);
       // Stats
       DirState *ds = at.m_dir_state;
       printf("process file update for token %d, %p -- %s\n",
              tid, ds, at.m_filename.c_str());
 
-      ds->m_here_stats.AddUp(i.second);
+      ds->m_here_stats.AddUp(i.record);
    }
 
    for (auto &i : m_file_close_q.read_queue())
@@ -175,7 +178,6 @@ int ResourceMonitor::process_queues()
 
       DirState *ds = at.m_dir_state;
       ds->m_here_stats.m_NFilesClosed += 1;
-      ds->m_here_stats.AddUp(i.record.m_stats);
 
       ds->m_here_usage.m_last_close_time = i.record.m_close_time;
 

@@ -96,8 +96,6 @@ public:
 
    DirState* get_parent() { return m_parent; }
 
-   void      add_up_stats(const Stats& stats);
-
    DirState* find_path(const std::string &path, int max_depth, bool parse_as_lfn, bool create_subdirs,
                        DirState **last_existing_dir = nullptr);
 
@@ -121,6 +119,9 @@ class DataFsState
 {
    DirState  m_root;
    time_t    m_prev_time;
+   // XXXX To specify what time-stamps are needed, likely:
+   // - last Stats update time
+   // - last Usage update time (and Stats reset)
 
 public:
    DataFsState() :

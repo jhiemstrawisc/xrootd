@@ -270,7 +270,8 @@ void Cache::ExecuteCommandUrl(const std::string& command_url)
             int token = m_res_mon->register_file_open(file_path, time_now, false);
             XrdPfc::Stats stats;
             stats.m_BytesWritten = file_size;
-            m_res_mon->register_file_close(token, stats, time(0));
+            m_res_mon->register_file_update_stats(token, stats);
+            m_res_mon->register_file_close(token, time(0));
          }
       }
    }
