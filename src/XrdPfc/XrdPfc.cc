@@ -411,7 +411,7 @@ void Cache::ReleaseRAM(char* buf, long long size)
 File* Cache::GetFile(const std::string& path, IO* io, long long off, long long filesize)
 {
    // Called from virtual IO::Attach
-   
+
    TRACE(Debug, "GetFile " << path << ", io " << io);
 
    ActiveMap_i it;
@@ -492,9 +492,9 @@ File* Cache::GetFile(const std::string& path, IO* io, long long off, long long f
 void Cache::ReleaseFile(File* f, IO* io)
 {
    // Called from virtual IO::DetachFinalize.
-   
+
    TRACE(Debug, "ReleaseFile " << f->GetLocalPath() << ", io " << io);
-   
+
    {
      XrdSysCondVarHelper lock(&m_active_cond);
 

@@ -49,7 +49,7 @@ void FPurgeState::MoveListEntriesToMap()
 }
 
 //----------------------------------------------------------------------------
-//! Open info file. Look at the UV stams and last access time. 
+//! Open info file. Look at the UV stams and last access time.
 //! Store the file in sorted map or in a list.s
 //! @param fname name of cache-info file
 //! @param Info object

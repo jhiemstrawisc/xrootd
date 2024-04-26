@@ -516,7 +516,7 @@ bool Cache::Config(const char *config_filename, const char *parameters)
    }
    // Setup number of standard-size blocks not released back to the system to 5% of total RAM.
    m_configuration.m_RamKeepStdBlocks = (m_configuration.m_RamAbsAvailable / m_configuration.m_bufferSize + 1) * 5 / 100;
-   
+
 
    // Set tracing to debug if this is set in environment
    char* cenv = getenv("XRDDEBUG");

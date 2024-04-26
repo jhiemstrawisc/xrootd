@@ -21,6 +21,7 @@ add_library(
   XrdPfc/XrdPfc.cc              XrdPfc/XrdPfc.hh
   XrdPfc/XrdPfcConfiguration.cc
   XrdPfc/XrdPfcDirState.cc      XrdPfc/XrdPfcDirState.hh
+  XrdPfc/XrdPfcDirStateSnapshot.cc      XrdPfc/XrdPfcDirStateSnapshot.hh
   XrdPfc/XrdPfcFPurgeState.cc   XrdPfc/XrdPfcFPurgeState.hh
   XrdPfc/XrdPfcPurge.cc
   XrdPfc/XrdPfcPurgePin.hh

@@ -367,7 +367,7 @@ inline void Info::SetBitWritten(int i)
 inline void Info::SetBitPrefetch(int i)
 {
    if (!m_buff_prefetch) return;
-      
+
    const int cn = i/8;
    assert(cn < GetBitvecSizeInBytes());
 

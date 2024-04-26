@@ -261,7 +261,7 @@ public:
    XrdOss* GetOss() const { return m_oss; }
 
    bool IsFileActiveOrPurgeProtected(const std::string&);
-   
+
    File* GetFile(const std::string&, IO*, long long off = 0, long long filesize = 0);
 
    void  ReleaseFile(File*, IO*);
@@ -269,7 +269,7 @@ public:
    void ScheduleFileSync(File* f) { schedule_file_sync(f, false, false); }
 
    void FileSyncDone(File*, bool high_debug);
-   
+
    XrdSysError* GetLog()   { return &m_log;  }
    XrdSysTrace* GetTrace() { return m_trace; }
 

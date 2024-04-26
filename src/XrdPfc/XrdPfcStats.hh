@@ -131,8 +131,8 @@ public:
    int       m_NFilesOpened = 0;
    int       m_NFilesClosed = 0;
    int       m_NFilesCreated = 0;
-   int       m_NFilesRemoved = 0; // purged
-   int       m_NDirectoriesCreated = 0; // this is hard, oss does it for us ... but we MUSt know it for DirState creation.
+   int       m_NFilesRemoved = 0; // purged or otherwise (error, direct requests)
+   int       m_NDirectoriesCreated = 0;
    int       m_NDirectoriesRemoved = 0;
 
    //----------------------------------------------------------------------

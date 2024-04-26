@@ -97,7 +97,7 @@ struct ChunkRequest
    char        *m_buf;      // Where to place the data chunk.
    long long    m_off;      // Offset *within* the corresponding block.
    int          m_size;     // Size of the data chunk.
- 
+
    ChunkRequest(ReadRequest *rreq, char *buf, long long off, int size) :
       m_read_req(rreq), m_buf(buf), m_off(off), m_size(size)
    {}
@@ -239,7 +239,7 @@ public:
    //! Used in XrdPosixXrootd::Close()
    //----------------------------------------------------------------------
    bool ioActive(IO *io);
-   
+
    //----------------------------------------------------------------------
    //! \brief Flags that detach stats should be written out in final sync.
    //! Called from CacheIO upon Detach.
@@ -304,7 +304,7 @@ private:
    static const char *m_traceID;
 
    int            m_ref_cnt;            //!< number of references from IO or sync
-   
+
    XrdOssDF      *m_data_file;          //!< file handle for data file on disk
    XrdOssDF      *m_info_file;          //!< file handle for data-info file on disk
    Info           m_cfi;                //!< download status of file blocks and access statistics
@@ -368,7 +368,7 @@ private:
 
    void inc_prefetch_read_cnt(int prc) { if (prc) { m_prefetch_read_cnt += prc; calc_prefetch_score(); } }
    void inc_prefetch_hit_cnt (int phc) { if (phc) { m_prefetch_hit_cnt  += phc; calc_prefetch_score(); } }
-   void calc_prefetch_score() { m_prefetch_score = float(m_prefetch_hit_cnt) / m_prefetch_read_cnt; }   
+   void calc_prefetch_score() { m_prefetch_score = float(m_prefetch_hit_cnt) / m_prefetch_read_cnt; }
 
    // Helpers
 

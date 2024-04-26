@@ -14,6 +14,7 @@ namespace XrdPfc {
 
 class DataFsState;
 class DirState;
+class DirStateElement;
 class FsTraversal;
 
 //==============================================================================
@@ -102,7 +103,7 @@ class ResourceMonitor
 
    XrdSysMutex  m_queue_mutex;        // mutex shared between queues
    unsigned int m_queue_swap_u1 = 0u; // identifier of current swap
- 
+
    DataFsState *m_fs_state;
    XrdOss      &m_oss;
 
@@ -192,6 +193,14 @@ public:
    int  process_queues();
 
    void heart_beat();
+
+   // --- Helpers for export of DirState vector snapshot.
+
+   void fill_sshot_vec_children(const DirState &parent_ds,
+                                int parent_idx,
+                                std::vector<DirStateElement> &vec,
+                                int max_depth);
+
 
    /* XXX Stuff from Cache, to be revisited.
    enum ScanAndPurgeThreadState_e { SPTS_Idle, SPTS_Scan, SPTS_Purge, SPTS_Done };

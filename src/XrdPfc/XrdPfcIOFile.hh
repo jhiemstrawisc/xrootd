@@ -72,7 +72,7 @@ public:
    //! \brief Abstract virtual method of XrdPfc::IO
    //! Called to destruct the IO object after it is no longer used.
    void DetachFinalize() override;
-   
+
    int  Fstat(struct stat &sbuff) override;
 
    long long FSize() override;

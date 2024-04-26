@@ -3,6 +3,7 @@
 #include "XrdPfcPathParseTools.hh"
 #include "XrdPfcFsTraversal.hh"
 #include "XrdPfcDirState.hh"
+#include "XrdPfcDirStateSnapshot.hh"
 #include "XrdPfcTrace.hh"
 
 using namespace XrdPfc;
@@ -44,11 +45,11 @@ void ResourceMonitor::scan_dir_and_recurse(FsTraversal &fst)
       // Remove files that do not have both cinfo and data?
       // Remove empty directories before even descending?
       // Leave this for some consistency pass?
-      // Note that FsTraversal supports ignored paths ... some details (cofig, N2N to be clarified).
+      // Note that FsTraversal supports ignored paths ... some details (config, N2N) to be clarified.
 
       if (it->second.has_data && it->second.has_cinfo) {
-         here.m_bytes_on_disk += it->second.stat_data.st_blocks * 512;
-         here.m_num_files     += 1;
+         here.m_BytesOnDisk += it->second.stat_data.st_blocks * 512;
+         here.m_NFiles      += 1;
       }
    }
 
@@ -67,11 +68,11 @@ void ResourceMonitor::scan_dir_and_recurse(FsTraversal &fst)
          scan_dir_and_recurse(fst);
          fst.cd_up();
 
-         here.m_num_subdirs += 1;
+         here.m_NDirectories += 1;
 
-         subdirs.m_bytes_on_disk += dhere.m_bytes_on_disk + dsubdirs.m_bytes_on_disk;
-         subdirs.m_num_files     += dhere.m_num_files     + dsubdirs.m_num_files;
-         subdirs.m_num_subdirs   += dhere.m_num_subdirs   + dsubdirs.m_num_subdirs;
+         subdirs.m_BytesOnDisk  += dhere.m_BytesOnDisk  + dsubdirs.m_BytesOnDisk;
+         subdirs.m_NFiles       += dhere.m_NFiles       + dsubdirs.m_NFiles;
+         subdirs.m_NDirectories += dhere.m_NDirectories + dsubdirs.m_NDirectories;
       }
       // XXX else try to remove it?
    }
@@ -152,7 +153,7 @@ int ResourceMonitor::process_queues()
          }
       }
 
-      ds->m_here_usage.m_last_open_time = i.record.m_open_time;
+      ds->m_here_usage.m_LastOpenTime = i.record.m_open_time;
    }
 
    for (auto &i : m_file_update_stats_q.read_queue())
@@ -179,7 +180,7 @@ int ResourceMonitor::process_queues()
       DirState *ds = at.m_dir_state;
       ds->m_here_stats.m_NFilesClosed += 1;
 
-      ds->m_here_usage.m_last_close_time = i.record.m_close_time;
+      ds->m_here_usage.m_LastCloseTime = i.record.m_close_time;
 
       // Release the AccessToken!
       at.clear();
@@ -255,7 +256,7 @@ void ResourceMonitor::heart_beat()
       if (next_up_prop_time > time(0))
          continue;
 
-      m_fs_state->upward_propagate_stats();
+      m_fs_state->upward_propagate_stats_and_times();
       next_up_prop_time += 60;
 
       // Here we can learn assumed file-based usage
@@ -268,17 +269,36 @@ void ResourceMonitor::heart_beat()
       // This one should really be rather timely ... as it will be used for calculation
       // of averages of stuff going on.
 
+      m_fs_state->apply_stats_to_usages();
+
       // Dump statistcs before actual purging so maximum usage values get recorded.
-      // Should really go to gstream --- and should really go from Heartbeat.
+      // This should dump out binary snapshot into /pfc-stats/, if so configured.
+      // Also, optionally, json.
+      // Could also go to gstream but this could easily be way too large.
       if (Cache::Conf().is_dir_stat_reporting_on())
       {
-         m_fs_state->dump_recursively(Cache::Conf().m_dirStatsStoreDepth);
+         const int       StoreDepth   =  Cache::Conf().m_dirStatsStoreDepth;
+         const DirState &root_ds      = *m_fs_state->get_root();
+         const int       n_sshot_dirs =  root_ds.count_dirs_to_level(StoreDepth);
+         printf("Snapshot n_dirs=%d, total n_dirs=%d\n", n_sshot_dirs,
+               root_ds.m_here_usage.m_NDirectories + root_ds.m_recursive_subdir_usage.m_NDirectories + 1);
+
+         m_fs_state->dump_recursively(StoreDepth);
+
+         DataFsSnapshot ss(*m_fs_state);
+         ss.m_dir_states.reserve(n_sshot_dirs);
+
+         ss.m_dir_states.emplace_back( DirStateElement(root_ds, -1) );
+         fill_sshot_vec_children(root_ds, 0, ss.m_dir_states, StoreDepth);
+
+         ss.dump();
       }
 
-      // XXXX
-      // m_fs_state->apply_stats_to_usages_and_reset_stats();
-      // m_fs_state->reset_stats(); // XXXXXX this is for sure after export, otherwise they will be zero
+      // if needed export to vector form
+      // - write to file
+      // - pass to purge pin
 
+      m_fs_state->reset_stats();
 
       // check time / diskusage --> purge condition?
       // run purge as job or thread
@@ -286,6 +306,33 @@ void ResourceMonitor::heart_beat()
    }
 }
 
+void ResourceMonitor::fill_sshot_vec_children(const DirState &parent_ds,
+                                              int parent_idx,
+                                              std::vector<DirStateElement> &vec,
+                                              int max_depth)
+{
+   int pos = vec.size();
+   int n_children = parent_ds.m_subdirs.size();
+
+   for (auto const & [name, child] : parent_ds.m_subdirs)
+   {
+      vec.emplace_back( DirStateElement(child, parent_idx) );
+   }
+
+   if (parent_ds.m_depth < max_depth)
+   {
+      DirStateElement &parent_dse = vec[parent_idx];
+      parent_dse.m_daughters_begin = pos;
+      parent_dse.m_daughters_end   = pos + n_children;
+
+      for (auto const & [name, child] : parent_ds.m_subdirs)
+      {
+         if (n_children > 0)
+            fill_sshot_vec_children(child, pos, vec, max_depth);
+         ++pos;
+      }
+   }
+}
 
 //==============================================================================
 // Old prototype from Cache / Purge, now to go into heart_beat() here, above.

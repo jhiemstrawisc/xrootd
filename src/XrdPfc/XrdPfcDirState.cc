@@ -3,8 +3,7 @@
 
 #include <string>
 
-namespace XrdPfc
-{
+using namespace XrdPfc;
 
 //----------------------------------------------------------------------------
 //! Constructor
@@ -17,8 +16,8 @@ DirState::DirState() : m_parent(0), m_depth(0)
 //! @param DirState parent directory
 //----------------------------------------------------------------------------
 DirState::DirState(DirState *parent) :
-    m_parent(parent),
-    m_depth(m_parent->m_depth + 1)
+   m_parent(parent),
+   m_depth(m_parent->m_depth + 1)
 {}
 
 //----------------------------------------------------------------------------
@@ -26,47 +25,51 @@ DirState::DirState(DirState *parent) :
 //! @param parent parent DirState object
 //! @param dname  name of this directory only, no slashes, no extras.
 //----------------------------------------------------------------------------
-DirState::DirState(DirState *parent, const std::string& dname) :
-    m_parent(parent),
-    m_dir_name(dname),
-    m_depth(m_parent->m_depth + 1)
+DirState::DirState(DirState *parent, const std::string &dname) :
+  DirStateBase(dname),
+  m_parent(parent),
+  m_depth(m_parent->m_depth + 1)
 {}
 
 //----------------------------------------------------------------------------
 //! Internal function called from find_dir or find_path_tok
 //! @param dir subdir name
 //----------------------------------------------------------------------------
-DirState* DirState::create_child(const std::string &dir)
+DirState *DirState::create_child(const std::string &dir)
 {
-    std::pair<DsMap_i, bool> ir = m_subdirs.insert(std::make_pair(dir, DirState(this, dir)));
-    return & ir.first->second;
+   std::pair<DsMap_i, bool> ir = m_subdirs.insert(std::make_pair(dir, DirState(this, dir)));
+   return &ir.first->second;
 }
 
 //----------------------------------------------------------------------------
 //! Internal function called from find_path
 //! @param dir subdir name
 //----------------------------------------------------------------------------
-DirState* DirState::find_path_tok(PathTokenizer &pt, int pos, bool create_subdirs,
+DirState *DirState::find_path_tok(PathTokenizer &pt, int pos, bool create_subdirs,
                                   DirState **last_existing_dir)
 {
-    if (pos == pt.get_n_dirs()) return this;
+   if (pos == pt.get_n_dirs())
+      return this;
 
-    DsMap_i i = m_subdirs.find(pt.m_dirs[pos]);
+   DirState *ds = nullptr;
 
-    DirState *ds = nullptr;
+   DsMap_i i = m_subdirs.find(pt.m_dirs[pos]);
 
-    if (i != m_subdirs.end())
-    {
-        ds = & i->second;
-        if (last_existing_dir) *last_existing_dir = ds;
-    }
-    else if (create_subdirs)
-    {
-        ds = create_child(pt.m_dirs[pos]);
-    }
-    if (ds) return ds->find_path_tok(pt, pos + 1, create_subdirs, last_existing_dir);
+   if (i != m_subdirs.end())
+   {
+      ds = &i->second;
+      if (last_existing_dir)
+         *last_existing_dir = ds;
+   }
+   else if (create_subdirs)
+   {
+      ds = create_child(pt.m_dirs[pos]);
+   }
 
-    return nullptr;
+   if (ds)
+      return ds->find_path_tok(pt, pos + 1, create_subdirs, last_existing_dir);
+
+   return nullptr;
 }
 
 //----------------------------------------------------------------------------
@@ -74,15 +77,16 @@ DirState* DirState::find_path_tok(PathTokenizer &pt, int pos, bool create_subdir
 //! @param path full path to parse
 //! @param max_depth directory depth to which to descend (value < 0 means full descent)
 //! @param parse_as_lfn
-//! @param create_subdirs 
-DirState* DirState::find_path(const std::string &path, int max_depth, bool parse_as_lfn,
+//! @param create_subdirs
+DirState *DirState::find_path(const std::string &path, int max_depth, bool parse_as_lfn,
                               bool create_subdirs, DirState **last_existing_dir)
 {
-    PathTokenizer pt(path, max_depth, parse_as_lfn);
+   PathTokenizer pt(path, max_depth, parse_as_lfn);
 
-    if (last_existing_dir) *last_existing_dir = this;
+   if (last_existing_dir)
+      *last_existing_dir = this;
 
-    return find_path_tok(pt, 0, create_subdirs, last_existing_dir);
+   return find_path_tok(pt, 0, create_subdirs, last_existing_dir);
 }
 
 //----------------------------------------------------------------------------
@@ -90,16 +94,47 @@ DirState* DirState::find_path(const std::string &path, int max_depth, bool parse
 //! @param dir subdir name @param bool create the subdir in this DirsStat
 //! @param create_subdirs if true and the dir is not found, a new DirState
 //!        child is created
-DirState* DirState::find_dir(const std::string &dir,
+DirState *DirState::find_dir(const std::string &dir,
                              bool create_subdirs)
 {
-    DsMap_i i = m_subdirs.find(dir);
+   DsMap_i i = m_subdirs.find(dir);
 
-    if (i != m_subdirs.end())  return & i->second;
+   if (i != m_subdirs.end())
+      return &i->second;
 
-    if (create_subdirs)  return create_child(dir);
+   if (create_subdirs)
+      return create_child(dir);
 
-    return nullptr;
+   return nullptr;
+}
+
+//----------------------------------------------------------------------------
+//! Propagate stat to parents
+//! Called from ResourceMonitor::heart_beat()
+//----------------------------------------------------------------------------
+void DirState::upward_propagate_stats_and_times()
+{
+   for (DsMap_i i = m_subdirs.begin(); i != m_subdirs.end(); ++i)
+   {
+      i->second.upward_propagate_stats_and_times();
+
+      m_recursive_subdir_stats.AddUp(i->second.m_recursive_subdir_stats);
+      m_recursive_subdir_stats.AddUp(i->second.m_here_stats);
+      // nothing to do for m_here_stats.
+
+      m_recursive_subdir_usage.update_last_times(i->second.m_recursive_subdir_usage);
+      m_recursive_subdir_usage.update_last_times(i->second.m_here_usage);
+   }
+}
+
+void DirState::apply_stats_to_usages()
+{
+   for (DsMap_i i = m_subdirs.begin(); i != m_subdirs.end(); ++i)
+   {
+      i->second.apply_stats_to_usages();
+   }
+   m_here_usage.update_from_stats(m_here_stats);
+   m_recursive_subdir_usage.update_from_stats(m_recursive_subdir_stats);
 }
 
 //----------------------------------------------------------------------------
@@ -108,75 +143,106 @@ DirState* DirState::find_dir(const std::string &dir,
 //----------------------------------------------------------------------------
 void DirState::reset_stats()
 {
-    m_here_stats.Reset();
-    m_recursive_subdirs_stats.Reset();
-
-    for (DsMap_i i = m_subdirs.begin(); i != m_subdirs.end(); ++i)
-    {
-        i->second.reset_stats();
-    }
-}
-
-//----------------------------------------------------------------------------
-//! Propagate stat to parents
-//! Called from ResourceMonitor::heart_beat()
-//----------------------------------------------------------------------------
-void DirState::upward_propagate_stats()
-{
-    for (DsMap_i i = m_subdirs.begin(); i != m_subdirs.end(); ++i)
-    {
-        i->second.upward_propagate_stats();
-
-        m_recursive_subdirs_stats.AddUp(i->second.m_recursive_subdirs_stats);
-        m_recursive_subdirs_stats.AddUp(i->second.m_here_stats);
-        // nothing to do for m_here_stats.
-    }
+   for (DsMap_i i = m_subdirs.begin(); i != m_subdirs.end(); ++i)
+   {
+      i->second.reset_stats();
+   }
+   m_here_stats.Reset();
+   m_recursive_subdir_stats.Reset();
 }
 
 //----------------------------------------------------------------------------
 //! Update statistics.
 //! Called from ... to be seen XXXX
 //----------------------------------------------------------------------------
+// attic
 long long DirState::upward_propagate_usage_purged()
 {
-    // XXXXX what's with this?
-/*
-    for (DsMap_i i = m_subdirs.begin(); i != m_subdirs.end(); ++i)
-    {
-        m_usage_purged += i->second.upward_propagate_usage_purged();
-    }
-    m_usage -= m_usage_purged;
+   // XXXXX what's with this? Should be automatic through the queues now ....
+   /*
+       for (DsMap_i i = m_subdirs.begin(); i != m_subdirs.end(); ++i)
+       {
+           m_usage_purged += i->second.upward_propagate_usage_purged();
+       }
+       m_usage -= m_usage_purged;
 
-    long long ret = m_usage_purged;
-    m_usage_purged = 0;
-    return ret;
-*/
-    return 0;
+       long long ret = m_usage_purged;
+       m_usage_purged = 0;
+       return ret;
+   */
+   return 0;
+}
+
+
+int DirState::count_dirs_to_level(int max_depth) const
+{
+   int n_dirs = 1;
+   if (m_depth < max_depth)
+   {
+      for (auto & [name, ds] : m_subdirs)
+      {
+         n_dirs += ds.count_dirs_to_level(max_depth);
+      }
+   }
+   return n_dirs;
 }
 
 //----------------------------------------------------------------------------
 //! Recursive print of statistics. Called if defined in pfc configuration.
 //!
 //----------------------------------------------------------------------------
-void DirState::dump_recursively(const char *name, int max_depth)
+void DirState::dump_recursively(const char *name, int max_depth) const
 {
-    printf("%*d %s usage=%lld usage_extra=%lld usage_total=%lld num_ios=%d duration=%d b_hit=%lld b_miss=%lld b_byps=%lld b_wrtn=%lld\n",
-            2 + 2*m_depth, m_depth, name,
-            // XXXXX decide what goes here
-            // m_usage, m_usage_extra, m_usage + m_usage_extra,
-            0ll, 0ll, 0ll,
-            // XXXXX here_stats or sum up?
-            m_here_stats.m_NumIos, m_here_stats.m_Duration,
-            m_here_stats.m_BytesHit, m_here_stats.m_BytesMissed, m_here_stats.m_BytesBypassed,
-            m_here_stats.m_BytesWritten);
+   printf("%*d %s usage_here=%lld usage_sub=%lld usage_total=%lld num_ios=%d duration=%d b_hit=%lld b_miss=%lld b_byps=%lld b_wrtn=%lld\n",
+          2 + 2 * m_depth, m_depth, name,
+          m_here_usage.m_BytesOnDisk, m_recursive_subdir_usage.m_BytesOnDisk,
+          m_here_usage.m_BytesOnDisk + m_recursive_subdir_usage.m_BytesOnDisk,
+          // XXXXX here_stats or sum up? or both?
+          m_here_stats.m_NumIos, m_here_stats.m_Duration,
+          m_here_stats.m_BytesHit, m_here_stats.m_BytesMissed, m_here_stats.m_BytesBypassed,
+          m_here_stats.m_BytesWritten);
 
-    if (m_depth >= max_depth)
-        return;
-
-    for (DsMap_i i = m_subdirs.begin(); i != m_subdirs.end(); ++i)
-    {
-        i->second.dump_recursively(i->first.c_str(), max_depth);
-    }
+   if (m_depth < max_depth)
+   {
+      for (auto & [name, ds] : m_subdirs)
+      {
+         ds.dump_recursively(name.c_str(), max_depth);
+      }
+   }
 }
 
-} // end namespace
+
+//==============================================================================
+// DataFsState
+//==============================================================================
+
+void DataFsState::upward_propagate_stats_and_times()
+{
+   m_root.upward_propagate_stats_and_times();
+}
+
+void DataFsState::apply_stats_to_usages()
+{
+   m_usage_update_time = time(0);
+   m_root.apply_stats_to_usages();
+}
+
+void DataFsState::reset_stats()
+{
+   m_root.reset_stats();
+   m_stats_reset_time = time(0);
+}
+
+void DataFsState::dump_recursively(int max_depth) const
+{
+   if (max_depth < 0)
+      max_depth = 4096;
+   time_t now = time(0);
+
+   printf("DataFsState::dump_recursively epoch = %lld delta_t = %lld, max_dump_depth = %d\n",
+          (long long)now, (long long)(now - m_prev_time), max_depth);
+
+   m_prev_time = now;
+
+   m_root.dump_recursively("root", max_depth);
+}
