@@ -54,6 +54,8 @@ using namespace XrdPfc;
 
 void DataFsSnapshot::write_json_file(const std::string &fname, bool include_preamble)
 {
+    // Throws exception on failed file-open.
+
     std::ofstream ofs;
     open_ofstream(ofs, fname, __func__);
 
@@ -73,7 +75,6 @@ void DataFsSnapshot::write_json_file(const std::string &fname, bool include_prea
 
     ofs << "\n";
     ofs.close();
-    return 0;
 }
 
 void DataFsSnapshot::dump()
