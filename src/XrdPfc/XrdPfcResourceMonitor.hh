@@ -86,6 +86,7 @@ class ResourceMonitor
 
    struct CloseRecord {
       time_t m_close_time;
+      Stats  m_full_stats;
    };
 
    struct PurgeRecord {
@@ -154,9 +155,9 @@ public:
       // in File::Open().
    }
 
-   void register_file_close(int token_id, time_t close_timestamp) {
+   void register_file_close(int token_id, time_t close_timestamp, const Stats& full_stats) {
       XrdSysMutexHelper _lock(&m_queue_mutex);
-      m_file_close_q.push(token_id, {close_timestamp});
+      m_file_close_q.push(token_id, {close_timestamp, full_stats});
    }
 
    // deletions can come from purge and from direct requests (Cache::UnlinkFile), the latter

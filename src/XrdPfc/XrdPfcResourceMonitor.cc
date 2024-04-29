@@ -182,6 +182,12 @@ int ResourceMonitor::process_queues()
 
       ds->m_here_usage.m_LastCloseTime = i.record.m_close_time;
 
+      // If full-stats write is not a multiple of 512-bytes that means we wrote the
+      // tail block. As usage is measured in 512-byte blocks this gets rounded up here.
+      long long over_512b = i.record.m_full_stats.m_BytesWritten & 0x1FFll;
+      if (over_512b)
+         ds->m_here_stats.m_BytesWritten += 512ll - over_512b;
+
       // Release the AccessToken!
       at.clear();
       m_access_tokens_free_slots.push_back(tid);
@@ -191,6 +197,7 @@ int ResourceMonitor::process_queues()
    {
       // i.id: DirState*, i.record: PurgeRecord
       DirState *ds = i.id;
+      // NOTE -- bytes removed should already be rounded up to 512-bytes for each file.
       ds->m_here_stats.m_BytesRemoved  += i.record.m_total_size;
       ds->m_here_stats.m_NFilesRemoved += i.record.n_files;
    }
@@ -203,6 +210,7 @@ int ResourceMonitor::process_queues()
          // find_path can return the last dir found ... but this clearly isn't a valid purge record.
          continue;
       }
+      // NOTE -- bytes removed should already be rounded up to 512-bytes for each file.
       ds->m_here_stats.m_BytesRemoved  += i.record.m_total_size;
       ds->m_here_stats.m_NFilesRemoved += i.record.n_files;
    }
@@ -214,6 +222,7 @@ int ResourceMonitor::process_queues()
          TRACE(Error, trc_pfx << "DirState not found for LFN path '" << i.id << "'.");
          continue;
       }
+      // NOTE -- bytes removed should already be rounded up to 512-bytes.
       ds->m_here_stats.m_BytesRemoved  += i.record;
       ds->m_here_stats.m_NFilesRemoved += 1;
    }

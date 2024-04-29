@@ -98,7 +98,7 @@ File::~File()
    if (m_resmon_token >= 0)
    {
       // Last update of file stats has been sent from the final Sync.
-      Cache::ResMon().register_file_close(m_resmon_token, time(0));
+      Cache::ResMon().register_file_close(m_resmon_token, time(0), m_stats);
    }
 
    TRACEF(Debug, "~File() ended, prefetch score = " <<  m_prefetch_score);

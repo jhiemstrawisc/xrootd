@@ -271,7 +271,7 @@ void Cache::ExecuteCommandUrl(const std::string& command_url)
             XrdPfc::Stats stats;
             stats.m_BytesWritten = file_size;
             m_res_mon->register_file_update_stats(token, stats);
-            m_res_mon->register_file_close(token, time(0));
+            m_res_mon->register_file_close(token, time(0), stats);
          }
       }
    }
