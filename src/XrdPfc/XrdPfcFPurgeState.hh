@@ -25,11 +25,11 @@ public:
    struct PurgeCandidate // unknown meaning, "file that is candidate for purge", PurgeCandidate would be better.
    {
       std::string path;
-      long long   nBytes;
+      long long   nStBlocks;
       time_t      time;
 
       PurgeCandidate(const std::string &dname, const char *fname, long long n, time_t t) :
-         path(dname + fname), nBytes(n), time(t)
+         path(dname + fname), nStBlocks(n), time(t)
       {}
    };
 
@@ -41,9 +41,9 @@ public:
 private:
    XrdOss   &m_oss;
 
-   long long m_nBytesReq;
-   long long m_nBytesAccum;
-   long long m_nBytesTotal;
+   long long m_nStBlocksReq;
+   long long m_nStBlocksAccum;
+   long long m_nStBlocksTotal;
    time_t    m_tMinTimeStamp;
    time_t    m_tMinUVKeepTimeStamp;
 
@@ -61,7 +61,8 @@ public:
    void      setMinTime(time_t min_time) { m_tMinTimeStamp = min_time; }
    time_t    getMinTime()          const { return m_tMinTimeStamp; }
    void      setUVKeepMinTime(time_t min_time) { m_tMinUVKeepTimeStamp = min_time; }
-   long long getNBytesTotal()      const { return m_nBytesTotal; }
+   long long getNStBlocksTotal() const { return m_nStBlocksTotal; }
+   long long getNBytesTotal() const { return 512ll * m_nStBlocksTotal; }
 
    void MoveListEntriesToMap();
 

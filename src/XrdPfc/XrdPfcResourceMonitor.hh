@@ -7,6 +7,7 @@
 
 #include <string>
 #include <vector>
+#include <list>
 
 class XrdOss;
 
@@ -15,6 +16,9 @@ namespace XrdPfc {
 class DataFsState;
 class DirState;
 class DirStateElement;
+class DataFsSnapshot;
+class DirPurgeElement;
+class DataFsPurgeshot;
 class FsTraversal;
 
 //==============================================================================
@@ -59,6 +63,9 @@ class ResourceMonitor
       iterator begin() const { return m_read_queue.begin(); }
       iterator end()   const { return m_read_queue.end(); }
 
+      // Shrinkage of overgrown queues
+      void shrink_read_queue() { m_read_queue.clear(); m_read_queue.shrink_to_fit(); }
+
    private:
       queue_type m_write_queue, m_read_queue;
    };
@@ -90,8 +97,8 @@ class ResourceMonitor
    };
 
    struct PurgeRecord {
-      long long m_total_size;
-      int n_files;
+      long long m_size_in_st_blocks;
+      int       m_n_files;
    };
 
    Queue<int, OpenRecord>          m_file_open_q;
@@ -102,11 +109,30 @@ class ResourceMonitor
    Queue<std::string, long long>   m_file_purge_q3;
    // DirPurge queue -- not needed? But we do need last-change timestamp in DirState.
 
-   XrdSysMutex  m_queue_mutex;        // mutex shared between queues
-   unsigned int m_queue_swap_u1 = 0u; // identifier of current swap
+   long long    m_current_usage_in_st_blocks = 0;  // aggregate disk usage by files
 
-   DataFsState *m_fs_state;
+   XrdSysMutex  m_queue_mutex;        // mutex shared between queues
+   unsigned int m_queue_swap_u1 = 0u; // identifier of current swap cycle
+
+   DataFsState &m_fs_state;
    XrdOss      &m_oss;
+
+   // Requests for File opens during name-space scans. Such LFNs are processed
+   // with some priority
+   struct LfnCondRecord
+   {
+      const std::string &f_lfn;
+      XrdSysCondVar     &f_cond;
+      bool               f_checked = false;
+   };
+
+   XrdSysMutex              m_dir_scan_mutex;
+   std::list<LfnCondRecord> m_dir_scan_open_requests;
+   int                      m_dir_scan_check_counter;
+   bool                     m_dir_scan_in_progress = false;
+
+   void process_inter_dir_scan_open_requests(FsTraversal &fst);
+   void cross_check_or_process_oob_lfn(const std::string &lfn, FsTraversal &fst);
 
 public:
    ResourceMonitor(XrdOss& oss);
@@ -127,7 +153,7 @@ public:
          token_id = m_access_tokens_free_slots.back();
          m_access_tokens_free_slots.pop_back();
          m_access_tokens[token_id].m_filename = filename;
-         m_access_tokens[token_id].m_last_write_queue_pos = m_queue_swap_u1 - 1;
+         m_access_tokens[token_id].m_last_queue_swap_u1 = m_queue_swap_u1 - 1;
       } else {
          token_id = (int) m_access_tokens.size();
          m_access_tokens.push_back({filename, m_queue_swap_u1 - 1});
@@ -162,27 +188,27 @@ public:
 
    // deletions can come from purge and from direct requests (Cache::UnlinkFile), the latter
    // also covering the emergency shutdown of a file.
-   void register_file_purge(DirState* target, long long file_size) {
+   void register_file_purge(DirState* target, long long size_in_st_blocks) {
       XrdSysMutexHelper _lock(&m_queue_mutex);
-      m_file_purge_q1.push(target, {file_size, 1});
+      m_file_purge_q1.push(target, {size_in_st_blocks, 1});
    }
-   void register_multi_file_purge(DirState* target, long long file_size, int n_files) {
+   void register_multi_file_purge(DirState* target, long long size_in_st_blocks, int n_files) {
       XrdSysMutexHelper _lock(&m_queue_mutex);
-      m_file_purge_q1.push(target, {file_size, n_files});
+      m_file_purge_q1.push(target, {size_in_st_blocks, n_files});
    }
-   void register_multi_file_purge(const std::string& target, long long file_size, int n_files) {
+   void register_multi_file_purge(const std::string& target, long long size_in_st_blocks, int n_files) {
       XrdSysMutexHelper _lock(&m_queue_mutex);
-      m_file_purge_q2.push(target, {file_size, n_files});
+      m_file_purge_q2.push(target, {size_in_st_blocks, n_files});
    }
-   void register_file_purge(const std::string& filename, long long file_size) {
+   void register_file_purge(const std::string& filename, long long size_in_st_blocks) {
       XrdSysMutexHelper _lock(&m_queue_mutex);
-      m_file_purge_q3.push(filename, file_size);
+      m_file_purge_q3.push(filename, size_in_st_blocks);
    }
 
    // void register_dir_purge(DirState* target);
    // target assumed to be empty at this point, triggered by a file_purge removing the last file in it.
    // hmmh, this is actually tricky ... who will purge the dirs? we should now at export-to-vector time
-   // and can prune leaf directories. Tthis might fail if a file has been created in there in the meantime, which is ok.
+   // and can prune leaf directories. This might fail if a file has been created in there in the meantime, which is ok.
    // However, is there a race condition between rmdir and creation of a new file in that dir? Ask Andy.
 
    // --- Helpers for event processing and actions
@@ -202,22 +228,34 @@ public:
                                 std::vector<DirStateElement> &vec,
                                 int max_depth);
 
+   void fill_pshot_vec_children(const DirState &parent_ds,
+                                int parent_idx,
+                                std::vector<DirPurgeElement> &vec,
+                                int max_depth);
 
-   /* XXX Stuff from Cache, to be revisited.
-   enum ScanAndPurgeThreadState_e { SPTS_Idle, SPTS_Scan, SPTS_Purge, SPTS_Done };
+   // Interface to other part of XCache -- note the CamelCase() notation.
+   void CrossCheckIfScanIsInProgress(const std::string &lfn, XrdSysCondVar &cond);
 
-   XrdSysCondVar    m_stats_n_purge_cond; //!< communication between heart-beat and scan-purge threads
+   // main function, steers startup then enters heart_beat. does not die.
+   void init_before_main();      // called from startup thread / configuration processing
+   void main_thread_function();  // run in dedicated thread
 
-   int                       m_last_scan_duration;
-   int                       m_last_purge_duration;
-   ScanAndPurgeThreadState_e m_spt_state;
-   // ---
-   m_stats_n_purge_cond(0),
-   m_last_scan_duration(0),
-   m_last_purge_duration(0),
-   m_spt_state(SPTS_Idle)
+   XrdSysCondVar  m_purge_task_cond  {0};
+   // The following variables are set under the above lock, purge task signals to heart_beat.
+   time_t         m_purge_task_start {0};
+   time_t         m_purge_task_end   {0};
+   bool           m_purge_task_active   {false}; // from the perspective of heart-beat, set only in heartbeat
+   bool           m_purge_task_complete {false}; // from the perspective of the task, reset in heartbeat, set in task
+   // When m_purge_task_active == true, DirState entries are not removed from the tree to
+   // allow purge thread to report cleared files directly via DirState ptr.
+   // Note, DirState removal happens during stat propagation traversal.
 
-   */
+   // Purge helpers etc.
+   void update_vs_and_file_usage_info();
+   void perform_purge_check(bool purge_cold_files, int tl);
+
+   void perform_purge_task(DataFsPurgeshot &ps);
+   void perform_purge_task_cleanup();
 };
 
 }

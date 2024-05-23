@@ -20,7 +20,6 @@
 
 #include <string>
 
-#include "XrdSys/XrdSysPthread.hh"
 #include "XrdPfcIO.hh"
 #include "XrdPfc.hh"
 #include "XrdPfcStats.hh"

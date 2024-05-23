@@ -27,7 +27,6 @@
 #include "XrdOuc/XrdOucEnv.hh"
 #include "XrdOuc/XrdOucUtils.hh"
 
-#include "XrdSys/XrdSysPthread.hh"
 #include "XrdSys/XrdSysTimer.hh"
 #include "XrdSys/XrdSysTrace.hh"
 
@@ -49,16 +48,9 @@ Cache           *Cache::m_instance = nullptr;
 XrdScheduler    *Cache::schedP = nullptr;
 
 
-void *ResourceMonitorHeartBeatThread(void*)
+void *ResourceMonitorThread(void*)
 {
-   // Cache::GetInstance().ResourceMonitorHeartBeat();
-   Cache::ResMon().heart_beat();
-   return 0;
-}
-
-void *PurgeThread(void*)
-{
-   Cache::GetInstance().Purge();
+   Cache::ResMon().main_thread_function();
    return 0;
 }
 
@@ -105,6 +97,8 @@ XrdOucCache *XrdOucGetCache(XrdSysLogger *logger,
    {
       pthread_t tid;
 
+      XrdSysThread::Run(&tid, ResourceMonitorThread, 0, 0, "XrdPfc ResourceMonitor");
+
       for (int wti = 0; wti < instance.RefConfiguration().m_wqueue_threads; ++wti)
       {
          XrdSysThread::Run(&tid, ProcessWriteTaskThread, 0, 0, "XrdPfc WriteTasks ");
@@ -114,12 +108,6 @@ XrdOucCache *XrdOucGetCache(XrdSysLogger *logger,
       {
          XrdSysThread::Run(&tid, PrefetchThread, 0, 0, "XrdPfc Prefetch ");
       }
-
-      XrdSysThread::Run(&tid, ResourceMonitorHeartBeatThread, 0, 0, "XrdPfc ResourceMonitorHeartBeat");
-
-      // XXXX This will be called from ResMon::heart_beat, as and if needed (maybe as XrdJob).
-      //      Now on for testing of the FPurgeState traversal / old-style (default?) purge.
-      XrdSysThread::Run(&tid, PurgeThread, 0, 0, "XrdPfc Purge");
    }
 
    XrdPfcFSctl* pfcFSctl = new XrdPfcFSctl(instance, logger);
@@ -132,7 +120,7 @@ XrdOucCache *XrdOucGetCache(XrdSysLogger *logger,
 //==============================================================================
 
 void Configuration::calculate_fractional_usages(long long  du,      long long  fu,
-                                                double    &frac_du, double    &frac_fu)
+                                                double    &frac_du, double    &frac_fu) const
 {
   // Calculate fractional disk / file usage and clamp them to [0, 1].
 
@@ -200,7 +188,6 @@ Cache::Cache(XrdSysLogger *logger, XrdOucEnv *env) :
    m_RAM_write_queue(0),
    m_RAM_std_size(0),
    m_isClient(false),
-   m_in_purge(false),
    m_active_cond(0)
 {
    // Default log level is Warning.
@@ -346,6 +333,15 @@ void Cache::ProcessWriteTasks()
          block->m_file->WriteBlockToDisk(block);
       }
    }
+}
+
+long long Cache::WritesSinceLastCall()
+{
+   // Called from ResourceMonitor for an alternative estimation of disk writes.
+   XrdSysCondVarHelper lock(&m_writeQ.condVar);
+   long long ret = m_writeQ.writes_between_purges;
+   m_writeQ.writes_between_purges = 0;
+   return ret;
 }
 
 //==============================================================================
@@ -677,7 +673,7 @@ void Cache::dec_ref_cnt(File* f, bool high_debug)
    }
 }
 
-bool Cache::IsFileActiveOrPurgeProtected(const std::string& path)
+bool Cache::IsFileActiveOrPurgeProtected(const std::string& path) const
 {
    XrdSysCondVarHelper lock(&m_active_cond);
 
@@ -685,6 +681,11 @@ bool Cache::IsFileActiveOrPurgeProtected(const std::string& path)
           m_purge_delay_set.find(path) != m_purge_delay_set.end();
 }
 
+void Cache::ClearPurgeProtectedSet()
+{
+   XrdSysCondVarHelper lock(&m_active_cond);
+   m_purge_delay_set.clear();
+}
 
 //==============================================================================
 //=== PREFETCH
@@ -1186,7 +1187,7 @@ int Cache::UnlinkFile(const std::string& f_name, bool fail_if_open)
    int i_ret = m_oss->Unlink(i_name.c_str());
 
    if (stat_ok)
-      m_res_mon->register_file_purge(f_name, f_stat.st_blocks * 512);
+      m_res_mon->register_file_purge(f_name, f_stat.st_blocks);
 
    TRACE(Debug, trc_pfx << f_name << ", f_ret=" << f_ret << ", i_ret=" << i_ret);
 

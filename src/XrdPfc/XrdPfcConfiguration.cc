@@ -442,6 +442,18 @@ bool Cache::Config(const char *config_filename, const char *parameters)
    // sets default value for disk usage
    XrdOssVSInfo sP;
    {
+      if (m_configuration.m_meta_space != m_configuration.m_data_space &&
+          m_oss->StatVS(&sP, m_configuration.m_meta_space.c_str(), 1) < 0)
+      {
+         m_log.Emsg("ConfigParameters()", "error obtaining stat info for meta space ", m_configuration.m_meta_space.c_str());
+         return false;
+      }
+      if (sP.Total < 10ll << 20)
+      {
+         m_log.Emsg("ConfigParameters()", "available data space is less than 10 MB (can be due to a mistake in oss.localroot directive) for space ",
+                    m_configuration.m_meta_space.c_str());
+                    return false;
+      }
       if (m_oss->StatVS(&sP, m_configuration.m_data_space.c_str(), 1) < 0)
       {
          m_log.Emsg("ConfigParameters()", "error obtaining stat info for data space ", m_configuration.m_data_space.c_str());
@@ -614,13 +626,11 @@ bool Cache::Config(const char *config_filename, const char *parameters)
 
    m_log.Say("       pfc g-stream has", m_gstream ? "" : " NOT", " been configured via xrootd.monitor directive\n");
 
-   // Create the ResourceMonitor object and perform initial scan.
+   // Create the ResourceMonitor and get it ready for starting the main thread function.
    if (aOK)
    {
-      m_log.Say("-----> Proxy file cache performing initial directory scan");
       m_res_mon = new ResourceMonitor(*m_oss);
-      aOK = m_res_mon->perform_initial_scan();
-      m_log.Say("-----> Proxy File Cache initial directory scan finished");
+      m_res_mon->init_before_main();
    }
 
    m_log.Say("=====> Proxy file cache configuration parsing ", aOK ? "completed" : "failed");

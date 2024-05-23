@@ -26,7 +26,6 @@
 #include "XrdCl/XrdClLog.hh"
 #include "XrdCl/XrdClConstants.hh"
 #include "XrdCl/XrdClFile.hh"
-#include "XrdSys/XrdSysPthread.hh"
 #include "XrdSys/XrdSysTimer.hh"
 #include "XrdOss/XrdOss.hh"
 #include "XrdOuc/XrdOucEnv.hh"
@@ -159,6 +158,10 @@ void File::check_delta_stats()
 void File::report_and_merge_delta_stats()
 {
    // Called under m_state_cond lock.
+   struct stat s;
+   m_data_file->Fstat(&s);
+   m_delta_stats.m_StBlocksAdded = s.st_blocks - m_st_blocks;
+   m_st_blocks = s.st_blocks;
    Cache::ResMon().register_file_update_stats(m_resmon_token, m_delta_stats);
    m_stats.AddUp(m_delta_stats);
    m_delta_stats.Reset();
@@ -387,7 +390,11 @@ bool File::Open()
 
    static const char *tpfx = "Open() ";
 
-   TRACEF(Dump, tpfx << "open file for disk cache");
+   TRACEF(Dump, tpfx << "entered");
+
+   // Before touching anything, check with ResourceMonitor if a scan is in progress.
+   // This function will wait internally if needed until it is safe to proceed.
+   Cache::ResMon().CrossCheckIfScanIsInProgress(m_filename, m_state_cond);
 
    const Configuration &conf = Cache::GetInstance().RefConfiguration();
 
@@ -424,7 +431,7 @@ bool File::Open()
       return false;
    }
 
-   myEnv.Put("oss.asize", "64k"); // TODO: Calculate? Get it from configuration? Do not know length of access lists ...
+   myEnv.Put("oss.asize", "64k"); // Advisory, block-map and access list lengths vary.
    myEnv.Put("oss.cgroup", conf.m_meta_space.c_str());
    if ((res = myOss.Create(myUser, ifn.c_str(), 0600, myEnv, XRDOSS_mkpath)) != XrdOssOK)
    {
@@ -460,6 +467,7 @@ bool File::Open()
          TRACEF(Warning, tpfx << "Basic sanity checks on data file failed, resetting info file, truncating data file.");
          m_cfi.ResetAllAccessStats();
          m_data_file->Ftruncate(0);
+         Cache::ResMon().register_file_purge(m_filename, data_stat.st_blocks);
       }
    }
 
@@ -472,6 +480,7 @@ bool File::Open()
          initialize_info_file = true;
          m_cfi.ResetAllAccessStats();
          m_data_file->Ftruncate(0);
+         Cache::ResMon().register_file_purge(m_filename, data_stat.st_blocks);
       } else {
          // TODO: If the file is complete, we don't need to reset net cksums.
          m_cfi.DowngradeCkSumState(conf.get_cs_Chk());
@@ -487,12 +496,21 @@ bool File::Open()
       m_info_file->Fsync();
       TRACEF(Debug, tpfx << "Creating new file info, data size = " <<  m_file_size << " num blocks = "  << m_cfi.GetNBlocks());
    }
+   else
+   {
+      if (futimens(m_info_file->getFD(), NULL)) {
+         TRACEF(Error, tpfx << "failed setting modification time " << ERRNO_AND_ERRSTR(errno));
+      }
+   }
 
    m_cfi.WriteIOStatAttach();
    m_state_cond.Lock();
    m_block_size = m_cfi.GetBufferSize();
    m_num_blocks = m_cfi.GetNBlocks();
    m_prefetch_state = (m_cfi.IsComplete()) ? kComplete : kStopped; // Will engage in AddIO().
+
+   m_data_file->Fstat(&data_stat);
+   m_st_blocks = data_stat.st_blocks;
 
    m_resmon_token = Cache::ResMon().register_file_open(m_filename, time(0), data_existed);
    m_resmon_report_threshold = std::min(std::max(200ll * 1024, m_file_size / 50), 500ll * 1024 * 1024);

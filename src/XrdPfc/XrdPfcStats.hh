@@ -40,6 +40,7 @@ public:
    long long m_BytesMissed = 0;     //!< number of bytes served from remote and cached
    long long m_BytesBypassed = 0;   //!< number of bytes served directly through XrdCl
    long long m_BytesWritten = 0;    //!< number of bytes written to disk
+   long long m_StBlocksAdded = 0;   //!< number of 512-byte blocks the file has grown by
    int       m_NCksumErrors = 0;    //!< number of checksum errors while getting data from remote
 
    //----------------------------------------------------------------------
@@ -49,6 +50,17 @@ public:
    Stats(const Stats& s) = default;
 
    Stats& operator=(const Stats&) = default;
+
+   Stats(const Stats& a, const Stats& b) :
+      m_NumIos        (a.m_NumIos       + b.m_NumIos),
+      m_Duration      (a.m_Duration      + b.m_Duration),
+      m_BytesHit      (a.m_BytesHit      + b.m_BytesHit),
+      m_BytesMissed   (a.m_BytesMissed   + b.m_BytesMissed),
+      m_BytesBypassed (a.m_BytesBypassed + b.m_BytesBypassed),
+      m_BytesWritten  (a.m_BytesWritten  + b.m_BytesWritten),
+      m_StBlocksAdded (a.m_StBlocksAdded + b.m_StBlocksAdded),
+      m_NCksumErrors  (a.m_NCksumErrors  + b.m_NCksumErrors)
+   {}
 
    //----------------------------------------------------------------------
 
@@ -80,7 +92,6 @@ public:
       m_Duration += duration;
    }
 
-
    //----------------------------------------------------------------------
 
    long long BytesRead() const
@@ -96,6 +107,7 @@ public:
       m_BytesMissed   = ref.m_BytesMissed   - m_BytesMissed;
       m_BytesBypassed = ref.m_BytesBypassed - m_BytesBypassed;
       m_BytesWritten  = ref.m_BytesWritten  - m_BytesWritten;
+      m_StBlocksAdded = ref.m_StBlocksAdded - m_StBlocksAdded;
       m_NCksumErrors  = ref.m_NCksumErrors  - m_NCksumErrors;
    }
 
@@ -107,6 +119,7 @@ public:
       m_BytesMissed   += s.m_BytesMissed;
       m_BytesBypassed += s.m_BytesBypassed;
       m_BytesWritten  += s.m_BytesWritten;
+      m_StBlocksAdded += s.m_StBlocksAdded;
       m_NCksumErrors  += s.m_NCksumErrors;
    }
 
@@ -118,6 +131,7 @@ public:
       m_BytesMissed   = 0;
       m_BytesBypassed = 0;
       m_BytesWritten  = 0;
+      m_StBlocksAdded = 0;
       m_NCksumErrors  = 0;
    }
 };
@@ -127,7 +141,7 @@ public:
 class DirStats : public Stats
 {
 public:
-   long long m_BytesRemoved = 0;
+   long long m_StBlocksRemoved = 0; // number of 512-byte blocks removed from the directory
    int       m_NFilesOpened = 0;
    int       m_NFilesClosed = 0;
    int       m_NFilesCreated = 0;
@@ -143,9 +157,16 @@ public:
 
    DirStats& operator=(const DirStats&) = default;
 
-   //----------------------------------------------------------------------
-
-   // maybe some missing AddSomething functions, like for read/write
+   DirStats(const DirStats& a, const DirStats& b) :
+      Stats(a, b),
+      m_StBlocksRemoved     (a.m_StBlocksRemoved     + b.m_StBlocksRemoved),
+      m_NFilesOpened        (a.m_NFilesOpened        + b.m_NFilesOpened),
+      m_NFilesClosed        (a.m_NFilesClosed        + b.m_NFilesClosed),
+      m_NFilesCreated       (a.m_NFilesCreated       + b.m_NFilesCreated),
+      m_NFilesRemoved       (a.m_NFilesRemoved       + b.m_NFilesRemoved),
+      m_NDirectoriesCreated (a.m_NDirectoriesCreated + b.m_NDirectoriesCreated),
+      m_NDirectoriesRemoved (a.m_NDirectoriesRemoved + b.m_NDirectoriesRemoved)
+   {}
 
    //----------------------------------------------------------------------
 
@@ -153,7 +174,7 @@ public:
    void DeltaToReference(const DirStats& ref)
    {
       Stats::DeltaToReference(ref);
-      m_BytesRemoved        = ref.m_BytesRemoved        - m_BytesRemoved;
+      m_StBlocksRemoved     = ref.m_StBlocksRemoved     - m_StBlocksRemoved;
       m_NFilesOpened        = ref.m_NFilesOpened        - m_NFilesOpened;
       m_NFilesClosed        = ref.m_NFilesClosed        - m_NFilesClosed;
       m_NFilesCreated       = ref.m_NFilesCreated       - m_NFilesCreated;
@@ -166,7 +187,7 @@ public:
    void AddUp(const DirStats& s)
    {
       Stats::AddUp(s);
-      m_BytesRemoved        += s.m_BytesRemoved;
+      m_StBlocksRemoved     += s.m_StBlocksRemoved;
       m_NFilesOpened        += s.m_NFilesOpened;
       m_NFilesClosed        += s.m_NFilesClosed;
       m_NFilesCreated       += s.m_NFilesCreated;

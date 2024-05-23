@@ -347,8 +347,9 @@ private:
 
    Stats         m_stats;              //!< cache statistics for this instance
    Stats         m_delta_stats;        //!< unreported updates to stats
-   int           m_resmon_token;       //!< token used in communication with the ResourceMonitor
+   long long     m_st_blocks;          //!< last reported st_blocks
    long long     m_resmon_report_threshold;
+   int           m_resmon_token;       //!< token used in communication with the ResourceMonitor
 
    void check_delta_stats();
    void report_and_merge_delta_stats();

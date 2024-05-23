@@ -42,8 +42,15 @@ namespace XrdPfc
 class File;
 class IO;
 class PurgePin;
-class DataFsState;
 class ResourceMonitor;
+
+
+template<class MOO>
+struct MutexHolder {
+   MOO &mutex;
+   MutexHolder(MOO &m) : mutex(m) { mutex.Lock(); }
+   ~MutexHolder() { mutex.UnLock(); }
+};
 }
 
 
@@ -63,7 +70,7 @@ struct Configuration
    bool is_dir_stat_reporting_on()     const { return m_dirStatsMaxDepth >= 0 || ! m_dirStatsDirs.empty() || ! m_dirStatsDirGlobs.empty(); }
    bool is_purge_plugin_set_up()       const { return false; }
 
-   void calculate_fractional_usages(long long du, long long fu, double &frac_du, double &frac_fu);
+   void calculate_fractional_usages(long long du, long long fu, double &frac_du, double &frac_fu) const;
 
    CkSumCheck_e get_cs_Chk() const { return (CkSumCheck_e) m_cs_Chk; }
 
@@ -223,11 +230,6 @@ public:
    static bool VCheck(XrdVersionInfo &urVersion) { return true; }
 
    //---------------------------------------------------------------------
-   //! Thread function invoked to scan and purge files from disk when needed.
-   //---------------------------------------------------------------------
-   void Purge();
-
-   //---------------------------------------------------------------------
    //! Remove cinfo and data files from cache.
    //---------------------------------------------------------------------
    int  UnlinkFile(const std::string& f_name, bool fail_if_open);
@@ -248,6 +250,8 @@ public:
    //---------------------------------------------------------------------
    void ProcessWriteTasks();
 
+   long long WritesSinceLastCall();
+
    char* RequestRAM(long long size);
    void  ReleaseRAM(char* buf, long long size);
 
@@ -260,7 +264,9 @@ public:
 
    XrdOss* GetOss() const { return m_oss; }
 
-   bool IsFileActiveOrPurgeProtected(const std::string&);
+   bool IsFileActiveOrPurgeProtected(const std::string&) const;
+   void ClearPurgeProtectedSet();
+   PurgePin* GetPurgePin() const { return m_purge_pin; }
 
    File* GetFile(const std::string&, IO*, long long off = 0, long long filesize = 0);
 
@@ -290,7 +296,7 @@ private:
 
    bool cfg2bytes(const std::string &str, long long &store, long long totalSpace, const char *name);
 
-   static Cache           *m_instance;  //!< this object
+   static Cache     *m_instance;        //!< this object
 
    XrdOucEnv        *m_env;             //!< environment passed in at creation
    XrdSysError       m_log;             //!< XrdPfc namespace logger
@@ -303,8 +309,8 @@ private:
 
    ResourceMonitor  *m_res_mon;
 
-   std::vector<XrdPfc::Decision*> m_decisionpoints;       //!< decision plugins
-   XrdPfc::PurgePin*  m_purge_pin;           //!< purge plugin
+   std::vector<Decision*> m_decisionpoints; //!< decision plugins
+   PurgePin*              m_purge_pin;      //!< purge plugin
 
    Configuration m_configuration;           //!< configurable parameters
 
@@ -336,10 +342,9 @@ private:
    typedef ActiveMap_t::iterator                      ActiveMap_i;
    typedef std::set<std::string>                      FNameSet_t;
 
-   ActiveMap_t      m_active;             //!< Map of currently active / open files.
-   FNameSet_t       m_purge_delay_set;
-   bool             m_in_purge;
-   XrdSysCondVar    m_active_cond;        //!< Cond-var protecting active file data structures.
+   ActiveMap_t            m_active;          //!< Map of currently active / open files.
+   FNameSet_t             m_purge_delay_set; //!< Set of files that should not be purged.
+   mutable XrdSysCondVar  m_active_cond;     //!< Cond-var protecting active file data structures.
 
    void inc_ref_cnt(File*, bool lock, bool high_debug);
    void dec_ref_cnt(File*, bool high_debug);

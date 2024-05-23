@@ -55,6 +55,7 @@ public:
    static const char *m_traceID;
 
    void slurp_current_dir();
+   void slurp_dir_ll(XrdOssDF &dh, int dir_level, const char *path, const char *trc_pfx);
 
 public:
    FsTraversal(XrdOss &oss);
@@ -67,12 +68,15 @@ public:
    bool cd_down(const std::string &dir_name);
    void cd_up();
 
-   int  open_at_ro(const char* fname, XrdOssDF *&ossDF) {
+   int open_at_ro(const char* fname, XrdOssDF *&ossDF) {
       return m_oss_at.OpenRO(*m_dir_handle_stack.back(), fname, m_env, ossDF);
    }
-   int  unlink_at(const char* fname) {
+   int unlink_at(const char* fname) {
       return m_oss_at.Unlink(*m_dir_handle_stack.back(), fname);
    }
+   int close_delete(XrdOssDF *&ossDF);
+
+   XrdOucEnv& default_env() { return m_env; }
 };
 
 }

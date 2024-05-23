@@ -269,7 +269,8 @@ void Cache::ExecuteCommandUrl(const std::string& command_url)
          {
             int token = m_res_mon->register_file_open(file_path, time_now, false);
             XrdPfc::Stats stats;
-            stats.m_BytesWritten = file_size;
+            stats.m_BytesWritten  = file_size;
+            stats.m_StBlocksAdded = (file_size & 0x1ff) ? (file_size >> 9) + 1 : file_size >> 9;
             m_res_mon->register_file_update_stats(token, stats);
             m_res_mon->register_file_close(token, time(0), stats);
          }

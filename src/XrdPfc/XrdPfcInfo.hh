@@ -20,8 +20,6 @@
 
 #include "XrdPfcTypes.hh"
 
-#include "XrdSys/XrdSysPthread.hh"
-
 #include <cstdio>
 #include <ctime>
 #include <cassert>

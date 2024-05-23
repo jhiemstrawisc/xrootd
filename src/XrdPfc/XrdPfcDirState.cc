@@ -109,6 +109,30 @@ DirState *DirState::find_dir(const std::string &dir,
 }
 
 //----------------------------------------------------------------------------
+//! Propagate usages to parents after initial directory scan.
+//! Called from ResourceMonitor::perform_initial_scan()
+//----------------------------------------------------------------------------
+void DirState::upward_propagate_initial_scan_usages()
+{
+   DirUsage &here    = m_here_usage;
+   DirUsage &subdirs = m_recursive_subdir_usage;
+
+   for (auto & [name, daughter] : m_subdirs)
+   {
+      daughter.upward_propagate_initial_scan_usages();
+
+      DirUsage &dhere    = daughter.m_here_usage;
+      DirUsage &dsubdirs = daughter.m_recursive_subdir_usage;
+
+      here.m_NDirectories += 1;
+
+      subdirs.m_StBlocks     += dhere.m_StBlocks     + dsubdirs.m_StBlocks;
+      subdirs.m_NFiles       += dhere.m_NFiles       + dsubdirs.m_NFiles;
+      subdirs.m_NDirectories += dhere.m_NDirectories + dsubdirs.m_NDirectories;
+   }
+}
+
+//----------------------------------------------------------------------------
 //! Propagate stat to parents
 //! Called from ResourceMonitor::heart_beat()
 //----------------------------------------------------------------------------
@@ -151,29 +175,6 @@ void DirState::reset_stats()
    m_recursive_subdir_stats.Reset();
 }
 
-//----------------------------------------------------------------------------
-//! Update statistics.
-//! Called from ... to be seen XXXX
-//----------------------------------------------------------------------------
-// attic
-long long DirState::upward_propagate_usage_purged()
-{
-   // XXXXX what's with this? Should be automatic through the queues now ....
-   /*
-       for (DsMap_i i = m_subdirs.begin(); i != m_subdirs.end(); ++i)
-       {
-           m_usage_purged += i->second.upward_propagate_usage_purged();
-       }
-       m_usage -= m_usage_purged;
-
-       long long ret = m_usage_purged;
-       m_usage_purged = 0;
-       return ret;
-   */
-   return 0;
-}
-
-
 int DirState::count_dirs_to_level(int max_depth) const
 {
    int n_dirs = 1;
@@ -195,8 +196,8 @@ void DirState::dump_recursively(const char *name, int max_depth) const
 {
    printf("%*d %s usage_here=%lld usage_sub=%lld usage_total=%lld num_ios=%d duration=%d b_hit=%lld b_miss=%lld b_byps=%lld b_wrtn=%lld\n",
           2 + 2 * m_depth, m_depth, name,
-          m_here_usage.m_BytesOnDisk, m_recursive_subdir_usage.m_BytesOnDisk,
-          m_here_usage.m_BytesOnDisk + m_recursive_subdir_usage.m_BytesOnDisk,
+          512 * m_here_usage.m_StBlocks, 512 * m_recursive_subdir_usage.m_StBlocks,
+          512 * (m_here_usage.m_StBlocks + m_recursive_subdir_usage.m_StBlocks),
           // XXXXX here_stats or sum up? or both?
           m_here_stats.m_NumIos, m_here_stats.m_Duration,
           m_here_stats.m_BytesHit, m_here_stats.m_BytesMissed, m_here_stats.m_BytesBypassed,
@@ -237,12 +238,9 @@ void DataFsState::dump_recursively(int max_depth) const
 {
    if (max_depth < 0)
       max_depth = 4096;
-   time_t now = time(0);
 
-   printf("DataFsState::dump_recursively epoch = %lld delta_t = %lld, max_dump_depth = %d\n",
-          (long long)now, (long long)(now - m_prev_time), max_depth);
-
-   m_prev_time = now;
+   printf("DataFsState::dump_recursively delta_t = %lld, max_dump_depth = %d\n",
+          (long long)(m_usage_update_time - m_stats_reset_time), max_depth);
 
    m_root.dump_recursively("root", max_depth);
 }

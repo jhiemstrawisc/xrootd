@@ -28,11 +28,10 @@ const char *FPurgeState::m_traceID = "Purge";
 //----------------------------------------------------------------------------
 FPurgeState::FPurgeState(long long iNBytesReq, XrdOss &oss) :
    m_oss(oss),
-   m_nBytesReq(iNBytesReq), m_nBytesAccum(0), m_nBytesTotal(0),
+   m_nStBlocksReq((iNBytesReq >> 9) + 1ll), m_nStBlocksAccum(0), m_nStBlocksTotal(0),
    m_tMinTimeStamp(0), m_tMinUVKeepTimeStamp(0)
 {
-    // XXXX init traversal, pass oss? Note, do NOT use DirState (it would have to come from elsewhere)
-    // well, depends how it's going to be called, eventually
+
 }
 
 //----------------------------------------------------------------------------
@@ -60,7 +59,7 @@ void FPurgeState::CheckFile(const FsTraversal &fst, const char *fname, Info &inf
 {
    static const char *trc_pfx = "FPurgeState::CheckFile ";
 
-   long long nbytes = info.GetNDownloadedBytes();
+   long long nblocks = fstat.st_blocks;
    time_t atime;
    if (!info.GetLatestDetachTime(atime))
    {
@@ -70,43 +69,35 @@ void FPurgeState::CheckFile(const FsTraversal &fst, const char *fname, Info &inf
    }
    // TRACE(Dump, trc_pfx << "checking " << fname << " accessTime  " << atime);
 
-   m_nBytesTotal += nbytes;
+   m_nStBlocksTotal += nblocks;
 
-   // XXXX Should remove aged-out files here ... but I have trouble getting
-   // the DirState and purge report set up consistently.
-   // Need some serious code reorganization here.
-   // Biggest problem is maintaining overall state a traversal state consistently.
-   // Sigh.
+   // Could remove aged-out / uv-keep-failed files here ... or in the calling function that
+   // can aggreagate info for all files in the directory.
 
-   // This can be done right with transactional DirState. Also for uvkeep, it seems.
-
-   // In first two cases we lie about PurgeCandidate time (set to 0) to get them all removed early.
-   // The age-based purge atime would also be good as there should be nothing
-   // before that time in the map anyway.
-   // But we use 0 as a test in purge loop to make sure we continue even if enough
+   // For now keep using 0 time as this is used in the purge loop to make sure we continue even if enough
    // disk-space has been freed.
 
    if (m_tMinTimeStamp > 0 && atime < m_tMinTimeStamp)
    {
-      m_flist.push_back(PurgeCandidate(fst.m_current_path, fname, nbytes, 0));
-      m_nBytesAccum += nbytes;
+      m_flist.push_back(PurgeCandidate(fst.m_current_path, fname, nblocks, 0));
+      m_nStBlocksAccum += nblocks;
    }
    else if (m_tMinUVKeepTimeStamp > 0 &&
             Cache::Conf().does_cschk_have_missing_bits(info.GetCkSumState()) &&
             info.GetNoCkSumTimeForUVKeep() < m_tMinUVKeepTimeStamp)
    {
-      m_flist.push_back(PurgeCandidate(fst.m_current_path, fname, nbytes, 0));
-      m_nBytesAccum += nbytes;
+      m_flist.push_back(PurgeCandidate(fst.m_current_path, fname, nblocks, 0));
+      m_nStBlocksAccum += nblocks;
    }
-   else if (m_nBytesAccum < m_nBytesReq || (!m_fmap.empty() && atime < m_fmap.rbegin()->first))
+   else if (m_nStBlocksAccum < m_nStBlocksReq || (!m_fmap.empty() && atime < m_fmap.rbegin()->first))
    {
-      m_fmap.insert(std::make_pair(atime, PurgeCandidate(fst.m_current_path, fname, nbytes, atime)));
-      m_nBytesAccum += nbytes;
+      m_fmap.insert(std::make_pair(atime, PurgeCandidate(fst.m_current_path, fname, nblocks, atime)));
+      m_nStBlocksAccum += nblocks;
 
       // remove newest files from map if necessary
-      while (!m_fmap.empty() && m_nBytesAccum - m_fmap.rbegin()->second.nBytes >= m_nBytesReq)
+      while (!m_fmap.empty() && m_nStBlocksAccum - m_fmap.rbegin()->second.nStBlocks >= m_nStBlocksReq)
       {
-         m_nBytesAccum -= m_fmap.rbegin()->second.nBytes;
+         m_nStBlocksAccum -= m_fmap.rbegin()->second.nStBlocks;
          m_fmap.erase(--(m_fmap.rbegin().base()));
       }
    }
@@ -141,6 +132,7 @@ void FPurgeState::ProcessDirAndRecurse(FsTraversal &fst)
          // generate purge event or not? or just flag possible discrepancy?
          // should this really be done in some other consistency-check traversal?
       }
+      fst.close_delete(fh);
 
       // XXX ? What do we do with the data-only / cinfo only ?
       // Protected top-directories are skipped.
@@ -180,20 +172,20 @@ bool FPurgeState::TraverseNamespace(const char *root_path)
 }
 
 /*
-void FPurgeState::UnlinkInfoAndData(const char *fname, long long nbytes, XrdOssDF *iOssDF)
+void FPurgeState::UnlinkInfoAndData(const char *fname, long long nblocks, XrdOssDF *iOssDF)
 {
    fname[fname_len - m_info_ext_len] = 0;
-   if (nbytes > 0)
+   if (nblocks > 0)
    {
       if ( ! Cache.GetInstance().IsFileActiveOrPurgeProtected(dataPath))
       {
          m_n_purged++;
-         m_bytes_purged += nbytes;
+         m_bytes_purged += nblocks;
       } else
       {
          m_n_purge_protected++;
-         m_bytes_purge_protected += nbytes;
-         m_dir_state->add_usage_purged(nbytes);
+         m_bytes_purge_protected += nblocks;
+         m_dir_state->add_usage_purged(nblocks);
          // XXXX should also tweak other stuff?
          fname[fname_len - m_info_ext_len] = '.';
          return;

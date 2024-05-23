@@ -6,7 +6,8 @@
 
 namespace XrdPfc
 {
-class DirState;
+class DataFsPurgeshot;
+class DirUsage;
 
 //----------------------------------------------------------------------------
 //! Base class for reguesting directory space to obtain.
@@ -21,7 +22,7 @@ public:
       long long nBytesToRecover{0};
 
       // internal use by the Cache purge thread. to be revisited, maybe an access token is more appropriate.
-      DirState *dirState{nullptr};
+      const DirUsage* dirUsage{nullptr};
    };
 
    typedef std::vector<DirInfo> list_t;
@@ -42,7 +43,7 @@ public:
    //!
    //! @return total number of bytes
    //---------------------------------------------------------------------
-   virtual long long GetBytesToRecover(DirState *) = 0;
+   virtual long long GetBytesToRecover(const DataFsPurgeshot&) = 0;
 
    //------------------------------------------------------------------------------
    //! Parse configuration arguments.

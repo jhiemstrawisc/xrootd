@@ -5,7 +5,6 @@ class XrdSysTrace;
 
 #include "XrdPfc.hh"
 #include "XrdOuc/XrdOucCache.hh"
-#include "XrdSys/XrdSysPthread.hh"
 #include <XrdSys/XrdSysRAtomic.hh>
 
 namespace XrdPfc

@@ -1,6 +1,6 @@
 #include "XrdPfc.hh"
 #include "XrdPfcPurgePin.hh"
-#include "XrdPfcDirState.hh"
+#include "XrdPfcDirStateSnapshot.hh"
 
 #include "XrdOuc/XrdOucEnv.hh"
 #include "XrdOuc/XrdOucUtils.hh"
@@ -11,34 +11,39 @@
 
 class XrdPfcPurgeQuota : public XrdPfc::PurgePin
 {
+   XrdSysError *log;
 public:
-   XrdPfcPurgeQuota() {}
+   XrdPfcPurgeQuota() : log(XrdPfc::Cache::GetInstance().GetLog()) {}
 
    //----------------------------------------------------------------------------
    //! Set directory statistics
    //----------------------------------------------------------------------------
-   void InitDirStatesForLocalPaths(XrdPfc::DirState *rootDS)
+   void InitDirStatesForLocalPaths(const XrdPfc::DataFsPurgeshot &purge_shot)
    {
       for (list_i it = m_list.begin(); it != m_list.end(); ++it)
       {
-         it->dirState = rootDS->find_path(it->path, XrdPfc::Cache::Conf().m_dirStatsStoreDepth, false, false);
+         it->dirUsage = purge_shot.find_dir_usage_for_dir_path(it->path);
       }
    }
 
    //----------------------------------------------------------------------------
    //! Provide bytes to erase from dir quota listed in a text file
    //----------------------------------------------------------------------------
-   virtual long long GetBytesToRecover(XrdPfc::DirState *ds)
+   long long GetBytesToRecover(const XrdPfc::DataFsPurgeshot &purge_shot) override
    {
       // setup diskusage for each dir path
-      InitDirStatesForLocalPaths(ds);
+      InitDirStatesForLocalPaths(purge_shot);
 
       long long totalToRemove = 0;
       // get bytes to remove
       for (list_i it = m_list.begin(); it != m_list.end(); ++it)
       {
-         // XXXXXX here we should have another mechanism. and probably add up here + subdirs
-         long long cv = it->dirState->recursive_subdir_usage().m_BytesOnDisk - it->nBytesQuota;
+         if (it->dirUsage == nullptr)
+         {
+            log->Emsg("PurgeQuotaPin--GetBytesToRecover", "directory not found:", it->path.c_str());
+            continue;
+         }
+         long long cv = 512ll * it->dirUsage->m_StBlocks - it->nBytesQuota;
          if (cv > 0)
             it->nBytesToRecover = cv;
          else
@@ -53,17 +58,15 @@ public:
    //----------------------------------------------------------------------------
    //! Provide bytes to erase from dir quota listed in a text file
    //----------------------------------------------------------------------------
-   virtual bool ConfigPurgePin(const char *parms)
+   bool ConfigPurgePin(const char *parms) override
    {
-      XrdSysError *log = XrdPfc::Cache::GetInstance().GetLog();
-
       // retrive configuration file name
       if (!parms || !parms[0] || (strlen(parms) == 0))
       {
-         log->Emsg("ConfigDecision", "Quota file not specified.");
+         log->Emsg("ConfigPurgePin", "Quota file not specified.");
          return false;
       }
-      log->Emsg("ConfigDecision", "Using directory list", parms);
+      log->Emsg("ConfigPurgePin", "Using directory list", parms);
 
       //  parse the file to get directory quotas
       const char *config_filename = parms;
@@ -74,7 +77,7 @@ public:
       int fd;
       if ((fd = open(config_filename, O_RDONLY, 0)) < 0)
       {
-         log->Emsg("Config() can't open configuration file ", config_filename);
+         log->Emsg("ConfigPurgePin() can't open configuration file ", config_filename);
       }
 
       Config.Attach(fd);

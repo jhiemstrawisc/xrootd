@@ -23,7 +23,6 @@
 #include "XrdOss/XrdOss.hh"
 #include "XrdSfs/XrdSfsInterface.hh"
 #include "XrdSys/XrdSysError.hh"
-#include "XrdSys/XrdSysPthread.hh"
 
 #include "XrdOuc/XrdOucEnv.hh"
 #include "XrdOuc/XrdOucPgrwUtils.hh"

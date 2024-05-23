@@ -27,6 +27,17 @@ FsTraversal::FsTraversal(XrdOss &oss) :
 FsTraversal::~FsTraversal()
 {}
 
+int FsTraversal::close_delete(XrdOssDF *&ossDF)
+{
+   int ret = 0;
+   if (ossDF) {
+      ret = ossDF->Close();
+      delete ossDF;
+   }
+   ossDF = nullptr;
+   return ret;
+}
+
 //----------------------------------------------------------------------------
 
 bool FsTraversal::begin_traversal(DirState *root, const char *root_path)
@@ -127,11 +138,19 @@ void FsTraversal::slurp_current_dir()
 {
    static const char *trc_pfx = "FsTraversal::slurp_current_dir ";
 
+   XrdOssDF &dh = *m_dir_handle_stack.back();
+   slurp_dir_ll(dh, m_rel_dir_level, m_current_path.c_str(), trc_pfx);
+}
+
+//----------------------------------------------------------------------------
+
+void FsTraversal::slurp_dir_ll(XrdOssDF &dh, int dir_level, const char *path, const char *trc_pfx)
+{
+   // Low-level implementation of slurp dir.
+
    char fname[256];
    struct stat fstat;
-   XrdOucEnv env;
 
-   XrdOssDF &dh = *m_dir_handle_stack.back();
    dh.StatRet(&fstat);
 
    const char   *info_ext     = Info::s_infoExtension;
@@ -151,7 +170,7 @@ void FsTraversal::slurp_current_dir()
       }
       if (rc != XrdOssOK)
       {
-         TRACE(Error, trc_pfx << "Readdir error at " << m_current_path << ", err " << XrdSysE2T(-rc) << ".");
+         TRACE(Error, trc_pfx << "Readdir error at " << path << ", err " << XrdSysE2T(-rc) << ".");
          break;
       }
 
@@ -159,7 +178,7 @@ void FsTraversal::slurp_current_dir()
 
       if (fname[0] == 0)
       {
-         TRACE_PURGE("  Finished reading dir [" << m_current_path << "]. Break loop.");
+         TRACE_PURGE("  Finished reading dir [" << path << "]. Break loop.");
          break;
       }
       if (fname[0] == '.' && (fname[1] == 0 || (fname[1] == '.' && fname[2] == 0)))
@@ -170,7 +189,7 @@ void FsTraversal::slurp_current_dir()
 
       if (S_ISDIR(fstat.st_mode))
       {
-         if (m_rel_dir_level == 0 && m_protected_top_dirs.find(fname) != m_protected_top_dirs.end())
+         if (dir_level == 0 && m_protected_top_dirs.find(fname) != m_protected_top_dirs.end())
          {
             // Skip protected top-directories.
             continue;
@@ -192,49 +211,5 @@ void FsTraversal::slurp_current_dir()
             m_current_files[fname].set_data(fstat);
          }
       }
-
-      /*
-      size_t fname_len = strlen(fname);
-      XrdOssDF *dfh = 0;
-
-      if (S_ISDIR(fstat.st_mode))
-      {
-         if (m_oss_at.Opendir(*iOssDF, fname, env, dfh) == XrdOssOK)
-         {
-               cd_down(fname);
-               TRACE_PURGE("  cd_down -> [" << m_current_path << "].");
-               TraverseNamespace(dfh);
-               cd_up();
-               TRACE_PURGE("  cd_up   -> [" << m_current_path << "].");
-         }
-         else
-               TRACE(Warning, trc_pfx << "could not opendir [" << m_current_path << fname << "], " << XrdSysE2T(errno));
-      }
-      else if (fname_len > info_ext_len && strncmp(&fname[fname_len - info_ext_len], info_ext, info_ext_len) == 0)
-      {
-         // Check if the file is currently opened / purge-protected is done before unlinking of the file.
-
-         Info cinfo(GetTrace());
-
-         if (m_oss_at.OpenRO(*iOssDF, fname, env, dfh) == XrdOssOK && cinfo.Read(dfh, m_current_path.c_str(), fname))
-         {
-               CheckFile(fname, cinfo, fstat);
-         }
-         else
-         {
-               TRACE(Warning, trc_pfx << "can't open or read " << m_current_path << fname << ", err " << XrdSysE2T(errno) << "; purging.");
-               m_oss_at.Unlink(*iOssDF, fname);
-               fname[fname_len - info_ext_len] = 0;
-               m_oss_at.Unlink(*iOssDF, fname);
-               // generate purge event or not? or just flag possible discrepancy?
-         }
-      }
-      else // XXXX devel debug only, to be removed
-      {
-         TRACE_PURGE("  Ignoring [" << fname << "], not a dir or cinfo.");
-      }
-
-      delete dfh;
-      */
    }
 }

@@ -14,11 +14,13 @@
 // - Data-holding struct DirUsage -- complementary to Stats.
 // - Base classes for DirState and DataFsState, shared between in-memory
 //   tree form and snap-shot vector form.
-// - Structs for DirState export in vector form:
-//   - struct DirStateElement, and
-//   - struct DataFsSnapshot.
-//   Those should probably go to another .hh/.cc so the object file can be included
-//   the dedicated binary for processing of the binary dumps.
+// - Forward declatation of structs for DirState export in vector form:
+//   - struct DirStateElement \_ for stats and usages snapshot
+//   - struct DataFsSnapshot  /
+//   - struct DirPurgeElement \_ for purge snapshot
+//   - struct DataFsPurgeshot /
+//   Those are in another file so the object file can be included in the
+//   dedicated binary for processing of the binary dumps.
 // - class DirState -- state of a directory, including current delta-stats.
 // - class DataFSState -- manager of the DirState tree, starting from root (as in "/").
 //
@@ -40,14 +42,29 @@ struct DirUsage
 {
    time_t    m_LastOpenTime  = 0;
    time_t    m_LastCloseTime = 0;
-   long long m_BytesOnDisk   = 0;
+   long long m_StBlocks      = 0;
    int       m_NFilesOpen    = 0;
    int       m_NFiles        = 0;
    int       m_NDirectories  = 0;
 
+   DirUsage() = default;
+
+   DirUsage(const DirUsage& s) = default;
+
+   DirUsage& operator=(const DirUsage&) = default;
+
+   DirUsage(const DirUsage &a, const DirUsage &b) :
+      m_LastOpenTime  (std::max(a.m_LastOpenTime,  b.m_LastOpenTime)),
+      m_LastCloseTime (std::max(a.m_LastCloseTime, b.m_LastCloseTime)),
+      m_StBlocks      (a.m_StBlocks     + b.m_StBlocks),
+      m_NFilesOpen    (a.m_NFilesOpen   + b.m_NFilesOpen),
+      m_NFiles        (a.m_NFiles       + b.m_NFiles),
+      m_NDirectories  (a.m_NDirectories + b.m_NDirectories)
+   {}
+
    void update_from_stats(const DirStats& s)
    {
-      m_BytesOnDisk  += s.m_BytesWritten        - s.m_BytesRemoved;
+      m_StBlocks     += s.m_StBlocksAdded       - s.m_StBlocksRemoved;
       m_NFilesOpen   += s.m_NFilesOpened        - s.m_NFilesClosed;
       m_NFiles       += s.m_NFilesCreated       - s.m_NFilesRemoved;
       m_NDirectories += s.m_NDirectoriesCreated - s.m_NDirectoriesRemoved;
@@ -69,17 +86,8 @@ struct DirStateBase
 {
    std::string  m_dir_name;
 
-   DirStats     m_here_stats;
-   DirStats     m_recursive_subdir_stats;
-
-   DirUsage     m_here_usage;
-   DirUsage     m_recursive_subdir_usage;
-
-
    DirStateBase() {}
    DirStateBase(const std::string &dname) : m_dir_name(dname) {}
-
-   const DirUsage& recursive_subdir_usage() const { return m_recursive_subdir_usage; }
 };
 
 struct DataFsStateBase
@@ -87,7 +95,11 @@ struct DataFsStateBase
    time_t    m_usage_update_time = 0;
    time_t    m_stats_reset_time = 0;
 
-   // FS usage and available space information
+   long long m_disk_total = 0; // In bytes, from Oss::StatVS() on space data
+   long long m_disk_used  = 0; // ""
+   long long m_file_usage = 0; // Calculate usage by data files in the cache
+   long long m_meta_total = 0; // In bytes, from Oss::StatVS() on space meta
+   long long m_meta_used  = 0; // ""
 };
 
 
@@ -98,6 +110,10 @@ struct DataFsStateBase
 struct DirStateElement;
 struct DataFsSnapshot;
 
+struct DirPurgeElement;
+struct DataFsPurgeshot;
+
+
 //==============================================================================
 // DirState
 //==============================================================================
@@ -107,30 +123,21 @@ struct DirState : public DirStateBase
    typedef std::map<std::string, DirState> DsMap_t;
    typedef DsMap_t::iterator               DsMap_i;
 
+   DirStats     m_here_stats;
+   DirStats     m_recursive_subdir_stats;
+
+   DirUsage     m_here_usage;
+   DirUsage     m_recursive_subdir_usage;
+
+   // This should be optional, only if needed and only up to some max level.
+   // Preferably stored in some extrnal vector (as AccessTokens are) and indexed from here.
+   // DirStats     m_purge_stats;  // here + subdir, running avg., as per purge params
+   // DirStats     m_report_stats; // here + subdir, reset after sshot dump
+
    DirState    *m_parent = nullptr;
    DsMap_t      m_subdirs;
-
    int          m_depth;
-   // bool      m_stat_report;  // not used yet - storing of stats requested; might also need depth
-
-   // XXX int m_possible_discrepancy; // num detected possible inconsistencies. here, subdirs?
-
-   // flag - can potentially be inaccurate -- plus timestamp of it (min or max, if several for subdirs)?
-
-   // Do we need running averages of these, too, not just traffic?
-   // Snapshot should be fine, no?
-
-   // Do we need all-time stats? Files/dirs created, deleted; files opened/closed;
-   // Well, those would be like Stats-running-average-infinity, just adding stuff in.
-
-   // min/max open (or close ... or both?) time-stamps
-
-   // Do we need string name? Probably yes, if we want to construct PFN from a given
-   // inner node upwards. Also, in this case, is it really the best idea to have
-   // map<string, DirState> as daughter container? It keeps them sorted for export :)
-
-   // quota info, enabled?
-
+   bool         m_scanned = false; // set to true after files in this directory are scanned.
 
    void init();
 
@@ -139,6 +146,7 @@ struct DirState : public DirStateBase
    DirState* find_path_tok(PathTokenizer &pt, int pos, bool create_subdirs,
                            DirState **last_existing_dir = nullptr);
 
+   // --- public part ---
 
    DirState();
 
@@ -153,13 +161,13 @@ struct DirState : public DirStateBase
 
    DirState* find_dir(const std::string &dir, bool create_subdirs);
 
+   // initial scan support
+   void upward_propagate_initial_scan_usages();
 
+   // stat support
    void upward_propagate_stats_and_times();
    void apply_stats_to_usages();
    void reset_stats();
-
-   // attic
-   long long upward_propagate_usage_purged(); // why would this be any different? isn't it included in stats?
 
    int count_dirs_to_level(int max_depth) const;
 
@@ -174,13 +182,8 @@ struct DirState : public DirStateBase
 struct DataFsState : public DataFsStateBase
 {
    DirState        m_root;
-   mutable time_t  m_prev_time;
 
-
-   DataFsState() :
-      m_root      (),
-      m_prev_time (time(0))
-   {}
+   DataFsState() : m_root() {}
 
    DirState* get_root() { return & m_root; }
 
@@ -192,9 +195,6 @@ struct DataFsState : public DataFsStateBase
    void upward_propagate_stats_and_times();
    void apply_stats_to_usages();
    void reset_stats();
-
-   // attic
-   void upward_propagate_usage_purged() { m_root.upward_propagate_usage_purged(); }
 
    void dump_recursively(int max_depth) const;
 };

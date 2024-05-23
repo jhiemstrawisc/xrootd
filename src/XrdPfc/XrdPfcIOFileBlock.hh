@@ -21,7 +21,6 @@
 #include <string>
 
 #include "XrdOuc/XrdOucCache.hh"
-#include "XrdSys/XrdSysPthread.hh"
 
 #include "XrdPfcIO.hh"
 
