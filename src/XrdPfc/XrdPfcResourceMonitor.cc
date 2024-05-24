@@ -8,6 +8,8 @@
 
 #include "XrdOss/XrdOss.hh"
 
+#include <algorithm>
+
 #define RM_DEBUG
 #ifdef RM_DEBUG
 #define dprintf(...) printf(__VA_ARGS__)
