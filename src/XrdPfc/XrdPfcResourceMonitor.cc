@@ -208,7 +208,8 @@ bool ResourceMonitor::perform_initial_scan()
 
    // Do upward propagation of usages.
    root_ds->upward_propagate_initial_scan_usages();
-
+   m_current_usage_in_st_blocks = root_ds->m_here_usage.m_StBlocks + 
+                                  root_ds->m_recursive_subdir_usage.m_StBlocks;
    update_vs_and_file_usage_info();
 
    return true;
@@ -306,7 +307,7 @@ int ResourceMonitor::process_queues()
       DirState *ds = i.id;
       ds->m_here_stats.m_StBlocksRemoved += i.record.m_size_in_st_blocks;
       ds->m_here_stats.m_NFilesRemoved   += i.record.m_n_files;
-      m_current_usage_in_st_blocks -= i.record.m_size_in_st_blocks;
+      m_current_usage_in_st_blocks       -= i.record.m_size_in_st_blocks;
    }
    for (auto &i : m_file_purge_q2.read_queue())
    {
@@ -319,7 +320,7 @@ int ResourceMonitor::process_queues()
       }
       ds->m_here_stats.m_StBlocksRemoved += i.record.m_size_in_st_blocks;
       ds->m_here_stats.m_NFilesRemoved   += i.record.m_n_files;
-      m_current_usage_in_st_blocks -= i.record.m_size_in_st_blocks;
+      m_current_usage_in_st_blocks       -= i.record.m_size_in_st_blocks;
    }
    for (auto &i : m_file_purge_q3.read_queue())
    {
@@ -331,7 +332,7 @@ int ResourceMonitor::process_queues()
       }
       ds->m_here_stats.m_StBlocksRemoved += i.record;
       ds->m_here_stats.m_NFilesRemoved   += 1;
-      m_current_usage_in_st_blocks -= i.record;
+      m_current_usage_in_st_blocks       -= i.record;
    }
 
    // Read queues / vectors are cleared at swap time.
