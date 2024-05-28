@@ -448,7 +448,7 @@ bool Cache::Config(const char *config_filename, const char *parameters)
          m_log.Emsg("ConfigParameters()", "error obtaining stat info for meta space ", m_configuration.m_meta_space.c_str());
          return false;
       }
-      if (sP.Total < 10ll << 20)
+      if (m_configuration.m_meta_space != m_configuration.m_data_space && sP.Total < 10ll << 20)
       {
          m_log.Emsg("ConfigParameters()", "available data space is less than 10 MB (can be due to a mistake in oss.localroot directive) for space ",
                     m_configuration.m_meta_space.c_str());
