@@ -101,7 +101,7 @@ void OldStylePurgeDriver(DataFsPurgeshot &ps)
    struct stat fstat;
    int         protected_cnt = 0;
    long long   protected_st_blocks = 0;
-   long long   st_blocks_to_remove = (ps.m_bytes_to_remove << 9) + 1ll;
+   long long   st_blocks_to_remove = (ps.m_bytes_to_remove >> 9) + 1ll;
    for (FPurgeState::map_i it = purgeState.refMap().begin(); it != purgeState.refMap().end(); ++it)
    {
       // Finish when enough space has been freed but not while age-based purging is in progress.
