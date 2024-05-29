@@ -114,15 +114,20 @@ void FPurgeState::ProcessDirAndRecurse(FsTraversal &fst)
       const std::string  i_name = f_name + Info::s_infoExtension;
 
       XrdOssDF    *fh = nullptr;
-      struct stat  fstat;
       Info         cinfo(GetTrace());
 
       // XXX Note, the initial scan now uses stat information only!
 
+      if (! it->second.has_both()) {
+         // cinfo or data file is missing.  What do we do? Erase?
+         // Should really be checked in some other "consistency" traversal.
+         continue;
+      }
+
       if (fst.open_at_ro(i_name.c_str(), fh) == XrdOssOK &&
           cinfo.Read(fh, fst.m_current_path.c_str(), i_name.c_str()))
       {
-         CheckFile(fst, i_name.c_str(), cinfo, fstat);
+         CheckFile(fst, i_name.c_str(), cinfo, it->second.stat_data);
       }
       else
       {
@@ -134,7 +139,6 @@ void FPurgeState::ProcessDirAndRecurse(FsTraversal &fst)
       }
       fst.close_delete(fh);
 
-      // XXX ? What do we do with the data-only / cinfo only ?
       // Protected top-directories are skipped.
    }
 

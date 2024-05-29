@@ -27,6 +27,7 @@ public:
 
       void set_data (const struct stat &s) { stat_data  = s; has_data  = true; }
       void set_cinfo(const struct stat &s) { stat_cinfo = s; has_cinfo = true; }
+      bool has_both() const { return has_data && has_cinfo; }
    };
 
 protected:
