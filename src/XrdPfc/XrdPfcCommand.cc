@@ -299,7 +299,7 @@ void Cache::ExecuteCommandUrl(const std::string& command_url)
       SplitParser ap(token, " ");
       int argc = ap.fill_argv(argv);
 
-      XrdOucArgs  Spec(&m_log, err_prefix, "hvs:b:t:d:",
+      XrdOucArgs  Spec(&m_log, err_prefix, "h",
                        "help",         1, "h",
                        (const char *) 0);
 
@@ -326,7 +326,7 @@ void Cache::ExecuteCommandUrl(const std::string& command_url)
          return;
       }
 
-      std::string f_name(cp.get_reminder());
+      std::string f_name(cp.get_reminder_with_delim());
 
       TRACE(Debug, err_prefix << "file argument '" << f_name << "'.");
 
