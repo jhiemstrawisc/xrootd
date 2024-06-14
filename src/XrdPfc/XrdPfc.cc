@@ -119,27 +119,6 @@ XrdOucCache *XrdOucGetCache(XrdSysLogger *logger,
 
 //==============================================================================
 
-void Configuration::calculate_fractional_usages(long long  du,      long long  fu,
-                                                double    &frac_du, double    &frac_fu) const
-{
-  // Calculate fractional disk / file usage and clamp them to [0, 1].
-
-  // Fractional total usage above LWM:
-  // - can be > 1 if usage is above HWM;
-  // - can be < 0 if triggered via age-based-purging.
-  frac_du = (double) (du - m_diskUsageLWM) / (m_diskUsageHWM - m_diskUsageLWM);
-
-  // Fractional file usage above baseline.
-  // - can be > 1 if file usage is above max;
-  // - can be < 0 if file usage is below baseline.
-  frac_fu = (double) (fu - m_fileUsageBaseline) / (m_fileUsageMax - m_fileUsageBaseline);
-
-  frac_du = std::min( std::max( frac_du, 0.0), 1.0 );
-  frac_fu = std::min( std::max( frac_fu, 0.0), 1.0 );
-}
-
-//==============================================================================
-
 Cache &Cache::CreateInstance(XrdSysLogger *logger, XrdOucEnv *env)
 {
    assert (m_instance == 0);

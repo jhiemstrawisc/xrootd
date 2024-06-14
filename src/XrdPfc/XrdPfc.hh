@@ -70,8 +70,6 @@ struct Configuration
    bool is_dir_stat_reporting_on()     const { return m_dirStatsMaxDepth >= 0 || ! m_dirStatsDirs.empty() || ! m_dirStatsDirGlobs.empty(); }
    bool is_purge_plugin_set_up()       const { return false; }
 
-   void calculate_fractional_usages(long long du, long long fu, double &frac_du, double &frac_fu) const;
-
    CkSumCheck_e get_cs_Chk() const { return (CkSumCheck_e) m_cs_Chk; }
 
    bool is_cschk_cache() const { return m_cs_Chk & CSChk_Cache; }

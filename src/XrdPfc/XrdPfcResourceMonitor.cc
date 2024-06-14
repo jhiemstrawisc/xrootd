@@ -569,15 +569,13 @@ void ResourceMonitor::perform_purge_check(bool purge_cold_files, int tl)
 
    if (conf.are_file_usage_limits_set())
    {
-      ps.m_bytes_to_remove_f = std::max(ps.m_file_usage - conf.m_fileUsageNominal, 0ll);
-
-      // Here we estimate fractional usages -- to decide if full scan is necessary before actual purge.
-      double frac_du = 0, frac_fu = 0;
-      conf.calculate_fractional_usages(ps.m_disk_used, ps.m_file_usage, frac_du, frac_fu);
-
-      if (frac_fu > 1.0 - frac_du)
+      if (ps.m_space_based_purge )
       {
-         ps.m_bytes_to_remove_f = std::max(ps.m_bytes_to_remove_f, ps.m_disk_used - conf.m_diskUsageLWM);
+         ps.m_bytes_to_remove_f = std::max(ps.m_file_usage - conf.m_fileUsageBaseline, 0ll);
+      }
+      else if (ps.m_file_usage > conf.m_fileUsageMax)
+      {
+         ps.m_bytes_to_remove_f = std::max(ps.m_file_usage - conf.m_fileUsageNominal, 0ll);
          ps.m_space_based_purge = true;
       }
    }
